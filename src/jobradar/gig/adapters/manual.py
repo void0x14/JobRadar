@@ -26,6 +26,7 @@ class ManualAdapter:
     manual: bool = True
     note: str = ""
     entry_points: list[str] = field(default_factory=list)
+    groups: list[str] = field(default_factory=list)  # where the ads are, for the person
 
     async def scan(self, client: WebClient) -> list[Listing]:
         return []
@@ -37,6 +38,10 @@ ADAPTERS = [
         name="Facebook grupları (iş ilanı)",
         platform="facebook",
         note="Facebook has no public listing API and groups need an account; nothing is scraped.",
+        groups=[
+            "https://www.facebook.com/groups/1533399140233390",
+            "https://www.facebook.com/search/groups/?q=ankara%20g%C3%BCnl%C3%BCk%20i%C5%9F%20ilanlar%C4%B1",
+        ],
         entry_points=[
             "Facebook: İş Arayan İş Veren Ankara grubundaki ilanı kopyalayıp "
             "jobradar gig add --text ile ekle",
@@ -48,6 +53,11 @@ ADAPTERS = [
         name="WhatsApp grupları (iş ilanı)",
         platform="whatsapp",
         note="Groups need a membership and the messages are not public; nothing is scraped.",
+        groups=[
+            "https://whatsappgruplari.com/grup/ankara-is-ilanlari",
+            "https://whatsappgruplari.com/kategori/is-ilanlari",
+            "https://whatsappkanali.com/sehir/ankara/is-ilanlari",
+        ],
         entry_points=[
             "WhatsApp: grubundaki ilanı ilet veya kopyalayıp jobradar gig add --text ile ekle",
             "wa-bridge (Node) gelen mesajı aynı komuta yollar",

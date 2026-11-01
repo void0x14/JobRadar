@@ -101,6 +101,8 @@ async def validate_source(
     )
     if getattr(adapter, "manual", False):
         report.access = "manual"
+        if groups := getattr(adapter, "groups", None):
+            report.manual_note = (report.manual_note + " Gruplar: " + ", ".join(groups)).strip()
         report.checks = [
             Check("Kaynağa erişilebiliyor mu?", None, "kullanıcı girişi gerekiyor"),
             Check("İlan listesi alınabiliyor mu?", None, "kullanıcı girişi gerekiyor"),

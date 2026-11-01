@@ -830,7 +830,7 @@ def llm(ctx: typer.Context) -> None:
         models = endpoint_models(endpoint.base_url)
         service = service_for(endpoint.base_url)
         if models is not None:
-            state = "up"
+            state = "up" if models else "no session"
         elif service is not None and not logged_in(service):
             state = "no login"
         else:
@@ -838,6 +838,8 @@ def llm(ctx: typer.Context) -> None:
         typer.echo(f"  {name:<14} {endpoint.base_url:<38} {state}")
         if state == "no login":
             typer.echo("      not logged in yet: jobradar llm login")
+        if state == "no session":
+            typer.echo("      the cookie expired: jobradar llm setup --cookies <file>")
         for model in models or []:
             typer.echo(f"      {model}")
     typer.echo("")
@@ -924,7 +926,7 @@ def llm_test() -> None:
 
     import httpx
 
-    from jobradar.local_llm import ask
+    from jobradar.local_llm import ask, endpoint_models
 
     settings = _settings()
     llm_config = settings.config.llm
@@ -933,6 +935,14 @@ def llm_test() -> None:
         endpoint = llm_config.endpoints.get(provider)
         if endpoint is None:
             typer.echo(f"{model}: a hosted provider, so it needs a key. Skipped.")
+            continue
+        offered = endpoint_models(endpoint.base_url)
+        if offered is not None and not offered:
+            typer.secho(
+                f"{model}: the server is up but has no session "
+                "(the cookie expired): jobradar llm setup --cookies <file>.",
+                fg="yellow",
+            )
             continue
         started = time.monotonic()
         try:
@@ -1182,6 +1192,8 @@ def gig_sources() -> None:
             f"{row.key:<26}{state:<12}{(row.last_ok or '-')[:19]:<22}"
             f"{row.error_count:>6}{row.listings_total:>8}{row.gigs_total:>6}"
         )
+        if row.note:
+            print(f"    {row.note}")
         if row.last_error:
             print(f"    son hata: {row.last_error[:100]}")
 
