@@ -33,25 +33,36 @@ _UNIT_WORDS: list[tuple[PaymentUnit, str]] = [
         PaymentUnit.PER_TASK,
         r"görev\s+(?:başı|başına|bazlı)|task\s*(?:başı|başına|bazlı)|"
         r"adet\s+başı|iş\s+başına|sipariş\s+başı|her\s+görev|per\s+task|"
-        r"per\s+(?:\w+\s+){0,2}task|tek\s+seferlik|bir\s+kerelik|/\s*görev",
+        r"per\s+(?:\w+\s+){0,2}task|tek\s+seferlik|bir\s+kerelik|/\s*görev|"
+        r"(?:TL|TRY|USD|EUR|₺|\$|€)\s*TASK\b",
     ),
     (
         PaymentUnit.PER_PROJECT,
         r"proje\s+(?:bazlı|başına|başinde)|per\s+project|projeli|"
-        r"teslimata\s+göre|teslim\s+edilecek|/\s*proje",
+        r"teslimata\s+göre|teslim\s+edilecek|/\s*proje|"
+        r"(?:TL|TRY|USD|EUR|₺|\$|€)\s*PROJECT\b",
     ),
     (
         PaymentUnit.HOURLY,
         r"saatlik|saat\s+başı|saat\s+başına|saat\s+ücreti|hourly|"
-        r"per\s+hour|per\s+saat|/\s*saat|saatde|/\s*hour\b",
+        r"per\s+hour|per\s+saat|/\s*saat|saatde|/\s*hour\b|"
+        r"(?:TL|TRY|USD|EUR|₺|\$|€)\s*HOUR\b",
     ),
     (
         PaymentUnit.DAILY,
         r"günlük(?!çü)|gün\s+başı|gün\s+başına|gün\s+bazlı|günlükmü|yevmiye|"
-        r"daily|per\s+day|/\s*gün",
+        r"daily|per\s+day|/\s*gün|(?:TL|TRY|USD|EUR|₺|\$|€)\s*DAY\b",
     ),
-    (PaymentUnit.WEEKLY, r"haftalık|hafta\s+başı|hafta\s+başına|weekly|per\s+week|/\s*hafta"),
-    (PaymentUnit.MONTHLY, r"aylık|ay\s+başı|ay\s+bazlı|maaş|salary|per\s+month"),
+    (
+        PaymentUnit.WEEKLY,
+        r"haftalık|hafta\s+başı|hafta\s+başına|weekly|per\s+week|/\s*hafta|"
+        r"(?:TL|TRY|USD|EUR|₺|\$|€)\s*WEEK\b",
+    ),
+    (
+        PaymentUnit.MONTHLY,
+        r"aylık|ay\s+başı|ay\s+bazlı|maaş|salary|per\s+month|"
+        r"(?:TL|TRY|USD|EUR|₺|\$|€)\s*MONTH\b",
+    ),
 ]
 _UNIT_RE = [(unit, re.compile(pattern, re.IGNORECASE)) for unit, pattern in _UNIT_WORDS]
 

@@ -202,6 +202,19 @@ def test_monthly_only_work_is_excluded() -> None:
     assert "monthly" in " ".join(gig.reasons)
 
 
+def test_the_boards_own_salary_tag_is_read() -> None:
+    """Eleman writes the pay as "44000 TRY MONTH": that is a monthly wage."""
+    gig = classify(
+        title="Güvenlik Görevlisi",
+        description="Sitemizde çalışacak güvenlik görevlisi aranmaktadır. 44000 TRY MONTH",
+        url="https://x.test/39",
+        platform="test",
+    )
+    assert gig.verdict == Verdict.EXCLUDED
+    assert gig.payment_unit == PaymentUnit.MONTHLY
+    assert gig.payment_amount == 44000
+
+
 def test_full_time_work_is_excluded() -> None:
     gig = classify(
         title="Satış Temsilcisi",
