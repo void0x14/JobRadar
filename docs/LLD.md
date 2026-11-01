@@ -44,6 +44,16 @@ jobradar/
 │   │   ├── jev.py               # TypeSafe System One (typesafe-sdk)
 │   │   ├── llm.py               # LiteLLM fallback with prompts/match.md
 │   │   └── skills_rule.py       # exact skills overlap, never alerts
+│   ├── gig/                     # the Türkiye daily gig finder
+│   │   ├── models.py            # one gig, one row; the payment units apart
+│   │   ├── classify.py          # the payment model rules (daily, hourly, per task, per project)
+│   │   ├── structured.py        # the page's own schema.org data (JobPosting, ItemList)
+│   │   ├── adapters/            # one adapter per source
+│   │   ├── scan.py              # read the sources, classify, dedupe, store
+│   │   ├── notify.py            # the email with the new gigs
+│   │   ├── validate.py          # the nine source checks and the report
+│   │   ├── ingest.py            # ads a person brings in (Facebook, WhatsApp)
+│   │   └── watcher.py           # the scan on a timer
 │   ├── sinks/                   # notion.py, email_notify.py
 │   ├── llm.py                   # LiteLLM wrapper, cache, budget
 │   └── prompts/                 # extract.md, match.md
@@ -140,6 +150,12 @@ notify:
   max_alerts_per_day: 10
   digest_times: ["09:00", "19:00"]
   timezone: Asia/Kolkata
+
+gig:                             # the Türkiye daily gig finder
+  enabled: true                   # scan the gig sources while `jobradar run` is up
+  every_minutes: 30               # how often they are read
+  notify: true                    # email the new gigs as they appear
+  max_new_per_source: 20          # how many new ads one source may cost per scan
 ```
 
 ### `profile.yaml` (what the matcher knows about you)
@@ -347,6 +363,61 @@ CREATE TABLE llm_cache (
    created_at TEXT NOT NULL
 );
 
+CREATE TABLE gig (                             -- the Türkiye daily gig finder
+   job_id             TEXT PRIMARY KEY,       -- sha1(original_url)
+   fingerprint        TEXT,                   -- same ad on two sites: one row
+   job_title          TEXT NOT NULL,
+   employer           TEXT,
+   original_url       TEXT NOT NULL,
+   source_platform    TEXT NOT NULL,
+   source_key         TEXT,                   -- which adapter found it
+   city               TEXT,
+   district           TEXT,
+   remote_or_onsite   TEXT,                   -- remote | onsite | hybrid | unknown
+   job_description    TEXT,
+   payment_amount     REAL,                   -- NULL when the ad does not say
+   payment_currency   TEXT,
+   payment_unit       TEXT,                   -- daily | hourly | per_task | per_project | weekly | monthly | unknown
+   payment_frequency  TEXT,                   -- once | per_day | per_week | per_month | unknown
+   payment_timing     TEXT,
+   work_duration      TEXT,
+   working_hours      TEXT,
+   publication_date   TEXT,
+   application_method TEXT,
+   contact_information TEXT,
+   physical_effort    TEXT,                   -- light | medium | heavy | unknown
+   required_skills    TEXT,                   -- JSON list
+   eligibility        TEXT,
+   confidence_score   REAL,
+   verdict            TEXT,                   -- gig | uncertain | excluded
+   reasons            TEXT,                   -- JSON list: why it was kept or dropped
+   seen_on            TEXT,                   -- JSON list: every platform it was seen on
+   first_seen         TEXT NOT NULL,
+   last_seen          TEXT NOT NULL,
+   closed_at          TEXT,                   -- the ad page is gone: the ad is closed
+   notified_at        TEXT,
+   created_at         TEXT NOT NULL,
+   updated_at         TEXT NOT NULL
+);
+CREATE INDEX gig_fingerprint ON gig(fingerprint);
+
+CREATE TABLE gig_source (                      -- how each source is doing
+   key           TEXT PRIMARY KEY,
+   name          TEXT NOT NULL,
+   platform      TEXT NOT NULL,
+   url           TEXT,
+   enabled       INTEGER NOT NULL DEFAULT 1,
+   manual        INTEGER NOT NULL DEFAULT 0,  -- a person brings the ads in
+   note          TEXT,
+   last_ok       TEXT,
+   last_error    TEXT,
+   error_count   INTEGER NOT NULL DEFAULT 0,
+   listings_total INTEGER NOT NULL DEFAULT 0,
+   gigs_total    INTEGER NOT NULL DEFAULT 0,
+   last_listings INTEGER NOT NULL DEFAULT 0,
+   updated_at    TEXT NOT NULL
+);
+
 CREATE TABLE fetched_page (                    -- v0.2 A
    job_id     TEXT PRIMARY KEY REFERENCES job(id),
    final_url  TEXT,
@@ -471,6 +542,7 @@ flowchart LR
 | `notify_alert` | job.id (so never twice) | match | none (sends or batches an email; respects `max_alerts_per_day`) |
 | `notion_poll` | periodic | scheduler, every 2 min | records Shortlisted/Skipped for threshold suggestions |
 | `digest` | date + slot | scheduler, 09:00 and 19:00 IST | none |
+| `gig_scan` | a + b (alternating) | scheduler, every `gig.every_minutes` | none (it emails the new gigs itself) |
 
 **`enqueue(type, key)` on an existing row** (one row per `(type, key)`, so a task never runs twice at once):
 
@@ -880,6 +952,11 @@ Default backoff: attempt *n* waits `min(30 s × 4^(n−1), 1 h)` with ±20% jitt
 | `jobradar retry --failed` | Re-queue failed tasks |
 | `jobradar doctor` | Check LLM key for the configured provider, Playwright, Notion properties, SMTP and IMAP login |
 | `jobradar stats [--days 7]` | Posts, jobs, reposts merged, hidden ads, likely duplicates, failed tasks; from v0.2 B also match providers used, alerts sent, LLM/Jev spend and a suggested alert threshold |
+| `jobradar gig scan [--source KEY]` | Read every gig source, keep the short-paid ads, email the new ones |
+| `jobradar gig list [--verdict gig\|uncertain\|excluded]` | The gigs found (or the uncertain ones, or the dropped ones) |
+| `jobradar gig sources` | How each source is doing: last read, errors, ads found |
+| `jobradar gig validate [--source KEY]` | The nine source checks and the report |
+| `jobradar gig add --text ... [--url ...]` | Add an ad by hand (Facebook and WhatsApp) |
 
 ## Testing and observability
 

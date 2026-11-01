@@ -77,6 +77,7 @@ Every pipeline step reads and writes the SQLite store through the task queue, so
 | Component | Responsibility | Input → Output |
 |---|---|---|
 | Source adapters | Listen to Telegram (Telethon), read jobs you forward to an email folder (IMAP) and optionally WhatsApp; normalise messages | Platform events → `RawMessage` rows |
+| Gig finder | Read the Turkish gig sources (job boards, Telegram channels, freelance and AI-task platforms), read the payment model out of each ad, drop the full-time and monthly-only ones, keep one row per ad and email the new gigs | Ad pages → gig rows + one email |
 | Link extractor | Pull URLs from text, entities and buttons; expand short links; strip tracking params; OCR images | RawMessage → candidate URLs + text |
 | Deduper | Canonical-URL hash and company+role+location fingerprint; attach extra sources to existing jobs | Candidates → new Job or merge |
 | Fetcher | Download page with httpx; fall back to Playwright for JavaScript pages; skip login walls | URL → cleaned page text |
