@@ -470,7 +470,7 @@ def classify(
         contact_information=detect_contact(text),
         physical_effort=effort,
         required_skills=detect_skills(text),
-        eligibility=None,
+        eligibility=detect_eligibility(text),
         confidence_score=round(confidence, 2),
         verdict=verdict,
         reasons=reasons,
@@ -514,6 +514,12 @@ _DATE_WORDS = re.compile(
 _AGO = re.compile(r"(?P<amount>\d{1,3})\s*(?P<unit>dakika|saat|gün|hafta|ay)\s*önce", re.IGNORECASE)
 _EMPLOYER = re.compile(
     r"(?:firma|şirket|company|isveren|iş\s+veren)\s*:?\s*(?P<name>[\w\d .&'()-]{2,60})",
+    re.IGNORECASE,
+)
+_ELIGIBILITY = re.compile(
+    r"(?P<text>\d{1,2}\s*-\s*\d{1,2}\s*yaş|son\s+sınıf\s+(?:öğrenci|mezun)?|"
+    r"SGK'?li?\s*(?:olmak|olabilir)?|en\s+az\s+\d{1,2}\s+yıl(?:\s+deneyim)?|"
+    r"(?:kadın|erkek)\s+aday)",
     re.IGNORECASE,
 )
 
@@ -571,3 +577,11 @@ def detect_employer(text: str) -> str | None:
         if 2 < len(name) < 60:
             return name
     return None
+
+
+def detect_eligibility(text: str) -> str | None:
+    """Who can take the job, when the ad says: age, student year, SGK, experience."""
+    found = _ELIGIBILITY.search(text)
+    if not found:
+        return None
+    return " ".join(found.group("text").split()).lower()

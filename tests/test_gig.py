@@ -16,6 +16,7 @@ from jobradar.gig.adapters.base import Blocked, LinkAdapter, Listing, extract_li
 from jobradar.gig.classify import (
     classify,
     detect_city_district,
+    detect_eligibility,
     detect_employer,
     detect_published,
     extract_payment,
@@ -177,6 +178,13 @@ def test_the_employer_and_the_place_are_read() -> None:
     assert detect_employer("Firma: Bofor Lojistik İstanbul") == "Bofor Lojistik İstanbul"
     assert detect_city_district("Ankara Yenimahalle ilanı") == ("Ankara", "Yenimahalle")
     assert detect_city_district("İzmir ilanı") == ("İzmir", None)
+
+
+def test_who_can_take_the_job_is_read() -> None:
+    assert detect_eligibility("19-40 YAŞ ARASI SGK") == "19-40 yaş"
+    assert detect_eligibility("Son sınıf öğrenciler bekleniyor") == "son sınıf öğrenci"
+    assert detect_eligibility("En az 3 yıl deneyim şart") == "en az 3 yıl deneyim"
+    assert detect_eligibility("Temizlik elemanı") is None
 
 
 # ---- the adapters ----------------------------------------------------------------------------

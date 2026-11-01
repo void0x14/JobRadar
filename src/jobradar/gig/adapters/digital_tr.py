@@ -10,9 +10,11 @@ R10_ILAN = LinkAdapter(
     platform="r10",
     list_urls=[
         "https://www.r10.net/yazilim-kodlama-is-ilanlari/",
+        "https://blog.r10.net/is-ilanlari",
     ],
     pattern=r"r10\.net/[a-z0-9-]+-is-ilanlari/\d+-.*\.html",
     max_pages=2,
+    note="The forum carries the ads; the blog page lists articles, not ads.",
 )
 
 R10_ARAYAN = LinkAdapter(
