@@ -14,7 +14,7 @@ from typing import Annotated, Any
 import typer
 
 from jobradar import __version__, logs
-from jobradar.config import ConfigError, Settings, load_settings
+from jobradar.config import ConfigError, LLMEndpoint, Settings, load_settings
 
 app = typer.Typer(
     name="jobradar",
@@ -836,6 +836,8 @@ def llm(ctx: typer.Context) -> None:
         else:
             state = "down"
         typer.echo(f"  {name:<14} {endpoint.base_url:<38} {state}")
+        if state == "no login":
+            typer.echo("      not logged in yet: jobradar llm login")
         for model in models or []:
             typer.echo(f"      {model}")
     typer.echo("")
@@ -844,7 +846,10 @@ def llm(ctx: typer.Context) -> None:
 
 @llm_app.command("use")
 def llm_use(
-    model: Annotated[str, typer.Argument(help="The model to use, e.g. gemini-web/gemini-auto")],
+    model: Annotated[
+        str | None,
+        typer.Argument(help="The model to use, e.g. gemini-web/gemini-auto, or a server name"),
+    ] = None,
     slot: Annotated[str, typer.Option("--slot", help="both, extract or writer")] = "both",
 ) -> None:
     """Switch the model JobRadar uses (writes config.yaml)."""
@@ -853,11 +858,23 @@ def llm_use(
 
     settings = _settings()
     llm_config = settings.config.llm
-    if "/" not in model:
+    if model is None:
+        _models_by_server(llm_config.endpoints)
         _fail(
-            "Give the server and the model, e.g. gemini-web/gemini-auto "
-            "(jobradar llm shows what the servers offer)."
+            "Give the model to use, e.g. gemini-web/gemini-auto "
+            "(a server name alone lists what that server offers)."
         )
+        raise  # unreachable; keeps type checkers happy
+    if "/" not in model:
+        endpoint = llm_config.endpoints.get(model)
+        if endpoint is None:
+            _fail(
+                f"No server named '{model}'. The configured ones are: "
+                f"{', '.join(llm_config.endpoints) or 'none'}."
+            )
+            raise  # unreachable; keeps type checkers happy
+        _models_by_server({model: endpoint})
+        return
     provider, _, name = model.partition("/")
     if provider not in llm_config.endpoints and provider not in ("gemini", "groq"):
         _fail(
@@ -1051,6 +1068,20 @@ def _deepseek_model() -> str:
         if provider == "deepseek-web" and name:
             return name
     return "deepseek-chat"
+
+
+def _models_by_server(endpoints: dict[str, LLMEndpoint]) -> None:
+    """Print what each server offers, so a model can be picked from the list."""
+    from jobradar.local_llm import endpoint_models
+
+    for name, endpoint in endpoints.items():
+        models = endpoint_models(endpoint.base_url)
+        if models is None:
+            typer.echo(f"{name}: not answering at {endpoint.base_url}")
+            continue
+        typer.echo(f"{name}:")
+        for model in models:
+            typer.echo(f"  {name}/{model}")
 
 
 gig_app = typer.Typer(

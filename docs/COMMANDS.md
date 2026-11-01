@@ -153,7 +153,7 @@ Starts or stops them on 127.0.0.1 (4981 for Gemini Web, 9655 for DeepSeek Web). 
 uv run jobradar llm use gemini-web/gemini-auto
 uv run jobradar llm use gemini-web/gemini-auto --slot writer
 ```
-Switches the model in config.yaml, keeping your comments and layout. It warns when the server does not offer that model.
+Switches the model in config.yaml, keeping your comments and layout. It warns when the server does not offer that model. With no argument it lists what every server offers, and with a server name alone it lists that server's models.
 
 ```bash
 uv run jobradar llm test
