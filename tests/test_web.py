@@ -626,6 +626,25 @@ def test_web_url_is_the_phone_address(repo: Repo, clock: FakeClock) -> None:
     assert AppConfig.model_validate({"sources": {"telegram": {"enabled": False}}}).notion.enabled
 
 
+async def test_the_gig_scan_is_queued_while_jobradar_runs(repo: Repo, queue: TaskQueue) -> None:
+    """The gig sources are read on a timer, so a new ad is found without asking."""
+    from jobradar.app import Pipeline
+    from jobradar.config import GigConfig
+    from jobradar.pipeline.task_types import GIG_SCAN
+
+    base = settings()
+    config = base.config.model_copy(update={"gig": GigConfig(enabled=True, every_minutes=15)})
+    pipeline = Pipeline(base.model_copy(update={"config": config}), repo, queue, None)
+    try:
+        assert pipeline.gigs is not None
+        assert GIG_SCAN in pipeline.worker.handlers
+        pipeline.gigs.schedule()
+        task = queue.claim([GIG_SCAN])
+        assert task is not None and task.type == GIG_SCAN
+    finally:
+        await pipeline.aclose()
+
+
 async def test_pipeline_without_notion_drops_notion_tasks(repo: Repo, queue: TaskQueue) -> None:
     from jobradar.app import Pipeline, connect_notion
     from jobradar.config import NotionConfig
