@@ -3,7 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from jobradar.local_llm import LocalLLMError, cookie_header, gemini_env, set_models
+from jobradar.local_llm import (
+    LocalLLMError,
+    cookie_header,
+    gemini_env,
+    patch_loopback,
+    set_models,
+)
 
 COOKIES = [
     {"name": "__Secure-1PSID", "value": "psid", "domain": ".google.com"},
@@ -69,3 +75,16 @@ def test_set_models_leaves_the_other_model_alone() -> None:
 def test_set_models_needs_an_llm_section() -> None:
     with pytest.raises(LocalLLMError, match="llm:"):
         set_models("scoring:\n  hide_below: 40\n", extract="gemini-web/gemini-auto")
+
+
+def test_the_gemini_server_is_bound_to_localhost(tmp_path: Path) -> None:
+    server = tmp_path / "internal" / "server" / "server.go"
+    server.parent.mkdir(parents=True)
+    server.write_text('\taddress := fmt.Sprintf(":%s", port)\n')
+    assert patch_loopback(tmp_path) is True
+    assert 'fmt.Sprintf("127.0.0.1:%s", port)' in server.read_text()
+    assert patch_loopback(tmp_path) is False  # only once
+
+
+def test_a_server_without_the_file_is_left_alone(tmp_path: Path) -> None:
+    assert patch_loopback(tmp_path) is False

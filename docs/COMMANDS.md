@@ -140,7 +140,7 @@ Shows the model chain in config.yaml (the model, the writer model, the fallbacks
 ```bash
 uv run jobradar llm setup --cookies ~/cookies.json
 ```
-Installs the two local servers in `services/` (git-ignored): Gemini Web (a local API that uses your signed-in Gemini session) and DeepSeek Web (the fallback). `--cookies` takes the cookie export from your browser; without it the Gemini server keeps the cookie it already has. The file needs the cookies `__Secure-1PSID` and `__Secure-1PSIDTS`.
+Installs the two local servers in `services/` (git-ignored): Gemini Web (a local API that uses your signed-in Gemini session) and DeepSeek Web (the fallback). `--cookies` takes the cookie export from your browser; without it the Gemini server keeps the cookie it already has. The file needs the cookies `__Secure-1PSID` and `__Secure-1PSIDTS`. The Gemini server is patched to listen on 127.0.0.1 only, so nothing on your network can use your session. A new cookie needs a restart: `jobradar llm stop` and `jobradar llm start`.
 
 ```bash
 uv run jobradar llm start        # both servers

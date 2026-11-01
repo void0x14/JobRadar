@@ -1002,6 +1002,8 @@ def llm_login() -> None:
     import shutil
     import subprocess
 
+    import httpx
+
     from jobradar.local_llm import SERVICES, services_dir
 
     path = services_dir() / SERVICES["deepseek-web"].directory
@@ -1024,7 +1026,31 @@ def llm_login() -> None:
     )
     if result != 0:
         _fail("The DeepSeek login didn't finish. Run 'jobradar llm login' again.")
+    from jobradar.local_llm import LocalLLMError, ask
+    from jobradar.local_llm import start as start_service
+
+    service = SERVICES["deepseek-web"]
+    try:
+        typer.secho(start_service(service), fg="green")
+        answer = ask(service.base_url, _deepseek_model(), 'Reply with only this JSON: {"ok": true}')
+    except (LocalLLMError, httpx.HTTPError) as e:
+        _fail(f"DeepSeek is logged in but did not answer: {e}")
+        raise
     typer.secho("DeepSeek is ready to answer.", fg="green")
+    typer.echo(f"  {answer.strip()[:200]}")
+
+
+def _deepseek_model() -> str:
+    """The DeepSeek model the config asks for, or the default one."""
+    try:
+        models = _settings().config.llm.fallback_models
+    except ConfigError:
+        models = []
+    for model in models:
+        provider, _, name = model.partition("/")
+        if provider == "deepseek-web" and name:
+            return name
+    return "deepseek-chat"
 
 
 gig_app = typer.Typer(

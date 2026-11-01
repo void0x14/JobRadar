@@ -56,7 +56,7 @@ SERVICES: dict[str, Service] = {
         directory="FreeDeepseekAPI-EN",
         base_url="http://127.0.0.1:9655/v1",
         command=("node", "server.js"),
-        env={"NON_INTERACTIVE": "1", "SKIP_ACCOUNT_MENU": "1"},
+        env={"NON_INTERACTIVE": "1", "SKIP_ACCOUNT_MENU": "1", "HOST": "127.0.0.1"},
         login_file="deepseek-auth.json",
     ),
 }
@@ -147,11 +147,14 @@ def setup(cookies: Path | None = None) -> list[str]:
             _run(["git", "clone", "--depth", "1", service.repo, str(path)], f"clone {service.name}")
             done.append(f"cloned {service.name}")
     gemini = root / "gemini-web-to-api"
+    patched = patch_loopback(gemini)
+    if patched:
+        done.append("bound the Gemini Web server to 127.0.0.1")
     if cookies is not None:
         (gemini / ".env").write_text(gemini_env(cookie_header(cookies)), encoding="utf-8")
         done.append("wrote the Gemini Web cookie")
     binary = gemini / "bin" / "gemini-web-to-api"
-    if not binary.exists():
+    if patched or not binary.exists():
         if shutil.which("go") is None:
             raise LocalLLMError(
                 "Go is needed to build the Gemini Web server. Install Go, or run "
@@ -164,6 +167,24 @@ def setup(cookies: Path | None = None) -> list[str]:
         )
         done.append("built the Gemini Web server")
     return done
+
+
+def patch_loopback(directory: Path) -> bool:
+    """Bind the Gemini Web server to 127.0.0.1. It opens on every interface otherwise,
+    which would let anything on the same network use your Google session."""
+    path = directory / "internal" / "server" / "server.go"
+    if not path.is_file():
+        return False
+    text = path.read_text(encoding="utf-8")
+    if "127.0.0.1:%s" in text:
+        return False  # already loopback only
+    old = 'address := fmt.Sprintf(":%s", port)'
+    if old not in text:
+        return False  # upstream changed it; leave it alone
+    path.write_text(
+        text.replace(old, 'address := fmt.Sprintf("127.0.0.1:%s", port)'), encoding="utf-8"
+    )
+    return True
 
 
 def pid_file(service: Service) -> Path:
