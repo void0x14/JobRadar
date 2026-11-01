@@ -24,7 +24,7 @@ from functools import lru_cache
 from typing import Literal
 
 from jobradar.pipeline.skill_gaps import _TECH, NAMES, _canon
-from jobradar.resume.validate import keys_in
+from jobradar.providers.skills_rule import keys_in
 
 Kind = Literal["must", "either", "nice", "covered", "listed"]
 ORDER: dict[str, int] = {"must": 0, "listed": 1, "either": 2, "nice": 3, "covered": 4}

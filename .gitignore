@@ -8,10 +8,6 @@ config/*
 !config/.gitkeep
 data/*
 !data/.gitkeep
-output/*
-!output/.gitkeep
-gdrive_token.json
-credentials.json
 
 # Python
 __pycache__/
@@ -25,12 +21,6 @@ dist/
 .ruff_cache/
 .coverage
 htmlcov/
-
-# LaTeX build artefacts
-*.aux
-*.log
-*.out
-*.synctex.gz
 
 # Node (wa-bridge)
 node_modules/

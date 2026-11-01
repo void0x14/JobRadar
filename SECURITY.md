@@ -51,7 +51,6 @@ These are in scope, because they would let someone harm a JobRadar user:
 - **Server-side request forgery:** a job link, redirect or page that makes JobRadar (or its optional browser) request `localhost`, private network ranges or cloud metadata addresses.
 - **Prompt injection with effect:** text in a post or job page that makes JobRadar take an action, change other jobs, leak profile data, or write content outside a job's own Notion page.
 - **Notion data loss:** anything that makes JobRadar change or delete content outside its own "JobRadar" toggle, or other users' pages.
-- **Injection into generated files:** LaTeX, shell or file-path injection through job or profile data (resume generation, from v0.3).
 - **Forged email input:** getting a forwarded job accepted from an address that isn't yours (email forwarding, from v0.4).
 - **Supply chain:** vulnerable or malicious dependencies, GitHub Actions or Docker base images used by this repo.
 
@@ -80,7 +79,6 @@ Knowing what is already in place helps you judge a report:
 
 Planned with the features that need them:
 
-- **Resumes (v0.3):** every value inserted into LaTeX is escaped, and Tectonic runs with shell escape disabled.
 - **Email (v0.4):** an app password instead of your account password. Mail goes only to your own address, JobRadar reads only one folder, and it accepts forwards only from your own address with DKIM/SPF passing.
 
 ## Running JobRadar safely
@@ -101,6 +99,5 @@ Revoke it first, then clean up:
 | Notion token | notion.so/profile/integrations → your integration → regenerate the secret |
 | Gemini / Groq key | Google AI Studio / Groq console → delete the key and create a new one |
 | Gmail app password | myaccount.google.com/apppasswords → delete it and create a new one |
-| Google Drive token (`data/gdrive_token.json`) | myaccount.google.com/permissions → remove JobRadar's access |
 
 If a secret was committed to git, revoking it is what matters. Rewriting history does not remove it from forks, clones or caches.

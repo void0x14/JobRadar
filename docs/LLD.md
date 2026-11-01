@@ -4,7 +4,7 @@ _Oct 7, 2026_
 
 ## Summary
 
-This LLD specifies the code-level design of JobRadar v1.0: package layout, config formats, SQLite schema, Pydantic models, the job and task state machines, each module's algorithm (including layered extraction and Jev matching), LLM prompts, the LaTeX template contract, the Notion field mapping, plugin interfaces, retries, CLI and tests. It implements the components in the [HLD](HLD.md); names here are the names used in code.
+This LLD specifies the code-level design of JobRadar v1.0: package layout, config formats, SQLite schema, Pydantic models, the job and task state machines, each module's algorithm (including layered extraction and Jev matching), LLM prompts, the Notion field mapping, plugin interfaces, retries, CLI and tests. It implements the components in the [HLD](HLD.md); names here are the names used in code.
 
 ## Repository and module layout
 
@@ -36,7 +36,7 @@ jobradar/
 │   │   ├── candidates.py        # layer 3: candidate finders; Jev picks among them
 │   │   ├── extract.py           # orchestrates layers; layer 4 LLM fallback -> JobPosting
 │   │   ├── match.py             # compact profile, match task, composite score, reason line
-│   │   ├── decide.py            # policy: hide / flag / unsure / alert / inbox, auto-resume
+│   │   ├── decide.py            # policy: hide / flag / unsure / alert / inbox
 │   │   ├── scam.py              # scam heuristics
 │   │   └── adapters/            # generic.py, google_forms.py, ...
 │   ├── providers/               # match providers (plugin point)
@@ -44,17 +44,9 @@ jobradar/
 │   │   ├── jev.py               # TypeSafe System One (typesafe-sdk)
 │   │   ├── llm.py               # LiteLLM fallback with prompts/match.md
 │   │   └── skills_rule.py       # exact skills overlap, never alerts
-│   ├── resume/
-│   │   ├── tailor.py            # LLM picks/rephrases profile items
-│   │   ├── render.py            # Jinja2 -> .tex, escaping
-│   │   ├── compile.py           # Tectonic subprocess
-│   │   └── validate.py          # page count, unknown-skill check
-│   ├── kit/answers.py           # form answers + cover letter
-│   ├── storage/                 # local.py, gdrive.py
 │   ├── sinks/                   # notion.py, email_notify.py
 │   ├── llm.py                   # LiteLLM wrapper, cache, budget
-│   └── prompts/                 # extract.md, match.md, tailor.md, kit.md
-├── templates/                   # classic.tex.j2, modern.tex.j2
+│   └── prompts/                 # extract.md, match.md
 ├── wa-bridge/                   # Node sidecar (experimental)
 ├── config.example.yaml
 ├── profile.example.yaml
@@ -83,7 +75,6 @@ NOTION_DATABASE_ID=xxxxxxxx         # from the database URL; its data source is 
 TYPESAFE_API_KEY=                # Jev matching and candidate selection (early access); optional
 GEMINI_API_KEY=xxxxxxxx          # fallback extraction and matching (Google AI Studio)
 GROQ_API_KEY=                    # set instead of / as well as Gemini to use Groq
-GDRIVE_FOLDER_ID=xxxxxxxx        # required for online resume links
 ```
 
 LiteLLM reads `GEMINI_API_KEY` and `GROQ_API_KEY` directly; `typesafe-sdk` reads `TYPESAFE_API_KEY`. Only the keys for the providers in use are required; without `TYPESAFE_API_KEY`, matching uses the next provider in `matching.providers`. `jobradar doctor` checks every configured key.
@@ -105,7 +96,7 @@ sources:
 llm:
   extract_model: "gemini/gemini-flash-lite-latest"  # extraction + scoring
   extract_mode: fallback                            # fallback | always (see extract.py)
-  writer_model: "gemini/gemini-pro-latest"        # resumes + form answers
+  writer_model: "gemini/gemini-pro-latest"        # job summaries
   # Groq alternative:
   # extract_model: "groq/llama-3.1-8b-instant"
   # writer_model:  "groq/llama-3.3-70b-versatile"
@@ -121,7 +112,6 @@ filters:
 scoring:
   hide_below: 40                # confident matches below this → Hidden ("weak match")
   alert_above: 75               # email when at or above this AND confident AND eligible AND not scam
-  auto_resume_above: 85         # build resume + kit automatically at or above this; null = only on Shortlisted
 
 matching:
   providers: [jev, llm, skills_rule]   # tried in order; skills_rule results never trigger email
@@ -135,17 +125,9 @@ matching:
   alert_if_eligible_above: 0.7
   branch_strict: true            # "CSE/IT only" vs. your branch: false = rank lower instead of hide
 
-resume:
-  template: classic
-  max_pages: 1
-
 links:
   extra_shorteners: []          # more redirect hosts to expand (channel-specific shorteners)
   deny: []                      # host or host/path prefixes that are never jobs (ads, courses)
-
-storage:
-  local_dir: ./output
-  # resumes always go to Google Drive (GDRIVE_FOLDER_ID) and are linked in Notion
 
 email:
   smtp_host: smtp.gmail.com
@@ -160,7 +142,7 @@ notify:
   timezone: Asia/Kolkata
 ```
 
-### `profile.yaml` (the only source of resume facts)
+### `profile.yaml` (what the matcher knows about you)
 
 ```yaml
 basics:
@@ -210,7 +192,6 @@ erDiagram
     source ||--o{ raw_message : "source_id"
     raw_message ||--o{ job_source : "raw_message_id"
     job ||--o{ job_source : "job_id"
-    job ||--o{ artifact : "job_id"
 
     source {
         INTEGER id PK
@@ -252,16 +233,6 @@ erDiagram
     job_source {
         TEXT job_id PK, FK
         INTEGER raw_message_id PK, FK
-    }
-    artifact {
-        INTEGER id PK
-        TEXT job_id FK
-        TEXT kind "resume | kit"
-        INTEGER version
-        TEXT local_path
-        TEXT drive_url
-        TEXT content_json
-        TEXT created_at
     }
     task {
         INTEGER id PK
@@ -354,17 +325,6 @@ CREATE TABLE job_source (
    PRIMARY KEY (job_id, raw_message_id)
 );
 
-CREATE TABLE artifact (
-   id           INTEGER PRIMARY KEY,
-   job_id       TEXT NOT NULL REFERENCES job(id),
-   kind         TEXT NOT NULL CHECK (kind IN ('resume','kit')),
-   version      INTEGER NOT NULL DEFAULT 1,
-   local_path   TEXT,
-   drive_url    TEXT,                          -- Drive webViewLink, shown in Notion
-   content_json TEXT,                          -- tailored content / answers
-   created_at   TEXT NOT NULL
-);
-
 CREATE TABLE task (
    id          INTEGER PRIMARY KEY,
    type        TEXT NOT NULL,                  -- see Lifecycle
@@ -452,32 +412,11 @@ class JobPosting(BaseModel):
 # from a match provider, combined in code. See "pipeline/match.py, providers/".
 
 
-class TailoredResume(BaseModel):
-    summary_line: str | None
-    skills: list[str]  # must be a subset of profile skills
-    experience: list["PickedItem"]
-    projects: list["PickedItem"]
-
-
-class PickedItem(BaseModel):
-    ref_id: str  # id from profile.yaml
-    bullets: list["PickedBullet"]
-
-
-class PickedBullet(BaseModel):
-    ref_id: str  # source bullet id
-    text: str  # rephrased, same facts
-
-
-class FormAnswer(BaseModel):
-    label: str
-    answer: str
-    source: Literal["profile", "generated"]
 ```
 
 ## Job and task lifecycle
 
-The agent moves a job to `new` (or hides it) after matching; from there a high score or your Status change in Notion starts the resume.
+The agent moves a job to `new` (or hides it) after matching; from there you can shortlist it or skip it.
 
 ```mermaid
 stateDiagram-v2
@@ -490,22 +429,18 @@ stateDiagram-v2
     extracted --> new : match: eligible, not weak
     extracted --> hidden : match: confidently ineligible or weak
     new --> shortlisted : you shortlist
-    new --> resume_ready : score ≥ auto_resume_above (PDF built)
-    shortlisted --> resume_ready : PDF built
-    resume_ready --> applied : you apply
-    applied --> interview : interview call
-    interview --> offer : offer
+    new --> skipped : you are not interested
     hidden --> new : you un-hide
 
     classDef user fill:#fde8df,stroke:#e8743b,color:#111
     classDef side fill:none,stroke:#aaa,stroke-dasharray: 4 4,color:#888
-    class shortlisted,applied,interview,offer user
+    class shortlisted,skipped user
     class needs_review,discarded,hidden side
 ```
 
 - Plain states are set by the agent; orange states are set by you in Notion; dashed states are side exits kept for audit.
-- `skipped` and `rejected` can be set by you from any state; a hidden job can be moved back to `new`.
-- An auto-built resume does not change the Notion Status: the page stays **New** with the Resume link filled, until you move it.
+- `skipped` and `shortlisted` can be set by you from any state; a hidden job can be moved back to `new`.
+- The application statuses JobRadar used earlier (Applied, Interview, Offer, Rejected, Resume ready) are gone: a job that still carries one becomes Shortlisted or Skipped when the database is opened.
 
 Each arrow the agent takes is one task type; the task row's `(type, key)` uniqueness makes every step idempotent.
 
@@ -520,16 +455,9 @@ flowchart LR
     EX -.-> NR[needs_review / discarded]
     MA --> NU[notion_upsert]
     MA -->|"strong + confident + eligible + not scam"| NA[notify_alert]
-    MA -->|"score ≥ auto_resume_above"| BR[build_resume]
-    MA -->|"score ≥ auto_resume_above"| BK[build_kit]
     PROF([profile changed]) -->|open jobs| MA
     SCHED([scheduler]) -->|every 2 min| NP[notion_poll]
     SCHED -->|09:00 / 19:00 IST| DG[digest]
-    NP -->|Shortlisted, no resume| BR
-    NP -->|Shortlisted / Cover Letter| BK
-    BR --> UP[upload]
-    UP --> NU
-    BK --> NU
 ```
 
 | Task type | Key | Triggered by | Next task(s) |
@@ -537,17 +465,12 @@ flowchart LR
 | `process_message` | raw_message.id | source | `fetch` per new URL, or merge into existing job |
 | `fetch` | job.id | process_message | `extract` |
 | `extract` | job.id | fetch | `match`, `notion_upsert`, `notion_body` (or `needs_review` / `discarded`) |
-| `match` | job.id | extract; start-up when `profile_version` changed (open jobs) | `notion_upsert`, maybe `notify_alert`, maybe `build_resume` + `build_kit` |
+| `match` | job.id | extract; start-up when `profile_version` changed (open jobs) | `notion_upsert`, maybe `notify_alert` |
 | `notion_body` | job.id | extract | none |
 | `notion_upsert` | job.id | any job change | none |
 | `notify_alert` | job.id (so never twice) | match | none (sends or batches an email; respects `max_alerts_per_day`) |
-| `build_resume` | job.id | match (auto threshold) or notion_poll | `upload`, `notion_upsert` |
-| `build_kit` | job.id | match (auto threshold) or notion_poll | `notion_upsert` |
-| `upload` | artifact.id | build_resume | `notion_upsert` |
-| `notion_poll` | periodic | scheduler, every 2 min | `build_resume`, `build_kit`; records Shortlisted/Skipped for threshold suggestions |
+| `notion_poll` | periodic | scheduler, every 2 min | records Shortlisted/Skipped for threshold suggestions |
 | `digest` | date + slot | scheduler, 09:00 and 19:00 IST | none |
-
-The poller only enqueues `build_resume` when the job has no resume artifact, so a job that was auto-built and later shortlisted is not rebuilt (use `jobradar resume <job-id>` to force a new version).
 
 **`enqueue(type, key)` on an existing row** (one row per `(type, key)`, so a task never runs twice at once):
 
@@ -736,40 +659,7 @@ Policy runs in this order; the first rule that applies wins:
 | 5 | `score ≥ alert_above` and `eligible ≥ alert_if_eligible_above` and provider is not skills_rule | `new` + `notify_alert` |
 | 6 | otherwise | `new` (Inbox, sorted by Match Score) |
 
-Independently, `score ≥ auto_resume_above` with scam risk not high → `build_resume` + `build_kit`. The confidence tiers follow TypeSafe's guidance: act automatically on high confidence, show but don't act on medium, never act on low. Thresholds are starting values; `jobradar stats` suggests new ones from the jobs you mark Shortlisted or Skipped, and you apply them in `config.yaml`.
-
-### `resume/tailor.py` → `render.py` → `compile.py` → `validate.py`
-
-```mermaid
-flowchart LR
-    T["Tailor<br/>writer_model + tailor.md<br/>→ TailoredResume"] --> G{"Ground-truth<br/>check"}
-    G -->|violations dropped + logged| R["Render<br/>Jinja2 + latex_escape()"]
-    R --> C["Compile<br/>tectonic --untrusted, 60 s"]
-    C -->|error| CP["Retry once with<br/>plain template"] --> C2{ok?}
-    C2 -->|no| FAIL([failed])
-    C2 -->|yes| V
-    C --> V{"Pages ≤ max_pages?"}
-    V -->|no, tries < 3| TRIM["Drop lowest-ranked bullet"] --> R
-    V -->|yes| OUT["{company}_{role}_{yyyymmdd}_v{n}.pdf"]
-```
-
-1. **Tailor:** send job requirements + full profile (with ids) to `writer_model` using `tailor.md`; receive `TailoredResume`.
-2. **Ground-truth check:** every `ref_id` exists; every skill is in profile skills (case-insensitive, alias map such as "JS" → "JavaScript"); numbers in rephrased bullets must appear in the source bullet. Violations → drop the item and log.
-3. **Render** with Jinja2 using `\VAR{}` / `\BLOCK{}` delimiters; every string passes through `latex_escape()`.
-4. **Compile:** `tectonic -X compile resume.tex --outdir out/ --untrusted`, 60 s timeout.
-5. **Validate** with pypdf: page count ≤ `max_pages`. If 2 pages, drop the lowest-ranked bullet and recompile (max 3 tries).
-6. **File name:** `{company}_{role}_{yyyymmdd}_v{n}.pdf` (slugified).
-
-### `kit/answers.py`
-
-- For each `FormField`: exact match to `profile.answers` or `basics` first (source = `profile`); otherwise generate with `kit.md` (source = `generated`, under 120 words).
-- Cover letter only when the job asks for one or the user sets the **Cover Letter** checkbox in Notion.
-
-### `storage/gdrive.py`
-
-- OAuth installed-app flow on first run; token in `data/gdrive_token.json`.
-- Folder per month inside `GDRIVE_FOLDER_ID`; upload with `files.create`; link-sharing off by default; store `webViewLink` in `artifact.drive_url`.
-- The Notion **Resume** property is always this online link; the PDF is never attached to the Notion page. Drive is required for resumes: start-up fails with a clear message if `GDRIVE_FOLDER_ID` or the OAuth token is missing.
+The confidence tiers follow TypeSafe's guidance: act automatically on high confidence, show but don't act on medium, never act on low. Thresholds are starting values; `jobradar stats` suggests new ones from the jobs you mark Shortlisted or Skipped, and you apply them in `config.yaml`.
 
 ### `sources/email_forward.py`
 
@@ -781,10 +671,10 @@ flowchart LR
 ### `sinks/email_notify.py`
 
 - Sends over SMTP with STARTTLS (`aiosmtplib`) from `EMAIL_ADDRESS` to `NOTIFY_TO` only; there is no other recipient.
-- **Alert** (decide rule 5, or a shortlisted job closing within 24 h): subject `[JobRadar 82] Backend Intern @ Acme · closes 12 Oct`; body has role, company, score, the reason line, deadline, apply link, Notion page link, and the resume link if one was auto-built. One alert per job (task key = job id); alerts inside `alert_batch_minutes` are combined into one email; at most `max_alerts_per_day`, the rest go to the next digest.
+- **Alert** (decide rule 5, or a shortlisted job closing within 24 h): subject `[JobRadar 82] Backend Intern @ Acme · closes 12 Oct`; body has role, company, score, the reason line, deadline, apply link and Notion page link. One alert per job (task key = job id); alerts inside `alert_batch_minutes` are combined into one email; at most `max_alerts_per_day`, the rest go to the next digest.
 - *As built (instant alerts):* the first alert is sent at once (`send_alerts` with no delay); if an email went out less than `alert_batch_minutes` ago, the send waits until that window ends and every alert arriving meanwhile joins it. Each job shows "posted N min ago in <chat>" from its first sighting. Tasks carry a `priority`: fetch, extract, Notion upsert, match and alert work for a job first seen within the last hour is `FRESH` (1) and is claimed before older work; re-enqueueing never lowers a priority.
-- **Digest** at `digest_times`: counts of new, top matches, auto-built resumes, closing in 48 h, failures and LLM budget status, with a link to the Notion Inbox view.
-- *As built:* `sinks/digest.py`. Each slot is a `digest` task keyed by local slot time ("2026-10-12 09:00") and queued with a delay; `jobradar run` queues the next slot at start-up and each send queues the one after. The window runs from the previous slot to now. Top 5 open (`new`) jobs created in the window, by score; closing = `new`/`shortlisted`/`resume_ready` jobs with a deadline from today to today + 2; hidden jobs are grouped as not eligible / weak match / ads and other by their reason. Empty windows (no new jobs, nothing closing, no failed tasks) send nothing. Missed slots while the machine is off are skipped, not sent late.
+- **Digest** at `digest_times`: counts of new, top matches, your shortlist, closing in 48 h, failures and LLM budget status, with a link to the Notion Inbox view.
+- *As built:* `sinks/digest.py`. Each slot is a `digest` task keyed by local slot time ("2026-10-12 09:00") and queued with a delay; `jobradar run` queues the next slot at start-up and each send queues the one after. The window runs from the previous slot to now. Top 5 open (`new`) jobs created in the window, by score; closing = `new`/`shortlisted` jobs with a deadline from today to today + 2; hidden jobs are grouped as not eligible / weak match / ads and other by their reason. Empty windows (no new jobs, nothing closing, no failed tasks) send nothing. Missed slots while the machine is off are skipped, not sent late.
 - Each email is multipart (plain text + simple HTML) and sets `List-Id: jobradar` so users can filter it into a label.
 - Sending failure → retry with backoff like any task; never blocks the pipeline.
 
@@ -823,110 +713,6 @@ using the same level definitions as the Jev questions in the match.py section.
 <candidate>{{compact_profile}}</candidate>
 ```
 
-### `tailor.md`
-
-```text
-version: tailor-v1
-Build a one-page resume for this job using ONLY items in <profile>.
-- Pick the most relevant experience, projects and bullets; refer to them by id.
-- You may rephrase a bullet to match the job's wording, but keep every fact
-  and number unchanged. Do not add tools, skills, numbers or claims.
-- skills: choose from profile skills only, most relevant first, max 14.
-- At most 3 experience items, 3 projects, 4 bullets each.
-<job>{{job_json}}</job>
-<profile>{{profile_yaml_with_ids}}</profile>
-```
-
-### `kit.md`
-
-```text
-version: kit-v1
-Write answers for the form fields below, in first person, plain and specific.
-Use only facts from <profile>. Under 120 words each. If a field needs a fact
-the profile does not have, answer "[FILL IN: <what is needed>]".
-<job>{{job_json}}</job>
-<fields>{{fields_json}}</fields>
-<profile>{{profile_yaml}}</profile>
-```
-
-## LaTeX resume template
-
-Templates are Jinja2 files with LaTeX-safe delimiters, so LaTeX braces stay untouched. Every template receives the same context: `basics`, `education`, `skills`, `experience`, `projects`, `summary_line`.
-
-```python
-env = jinja2.Environment(
-    block_start_string=r"\BLOCK{",
-    block_end_string="}",
-    variable_start_string=r"\VAR{",
-    variable_end_string="}",
-    comment_start_string=r"\#{",
-    comment_end_string="}",
-    trim_blocks=True,
-    autoescape=False,
-    loader=jinja2.FileSystemLoader("templates"),
-)
-env.filters["e"] = latex_escape
-
-LATEX_SPECIAL = {
-    "&": r"\&",
-    "%": r"\%",
-    "$": r"\$",
-    "#": r"\#",
-    "_": r"\_",
-    "{": r"\{",
-    "}": r"\}",
-    "~": r"\textasciitilde{}",
-    "^": r"\textasciicircum{}",
-    "\\": r"\textbackslash{}",
-}
-```
-
-### `templates/classic.tex.j2` (excerpt)
-
-```latex
-\documentclass[10pt,a4paper]{article}
-\usepackage[margin=0.6in]{geometry}
-\usepackage{enumitem,titlesec,hyperref}
-\titleformat{\section}{\large\bfseries}{}{0em}{}[\titlerule]
-\setlist[itemize]{leftmargin=*,noitemsep,topsep=2pt}
-\pagestyle{empty}
-\begin{document}
-\begin{center}
-    {\LARGE\bfseries \VAR{basics.name|e}}\\
-    \VAR{basics.email|e} \textbar{} \VAR{basics.phone|e} \textbar{}
-    \href{\VAR{basics.links.github}}{GitHub} \textbar{}
-    \href{\VAR{basics.links.linkedin}}{LinkedIn}
-\end{center}
-
-\section*{Education}
-\BLOCK{for ed in education}
-\textbf{\VAR{ed.school|e}} \hfill \VAR{ed.years|e}\\
-\VAR{ed.degree|e} \hfill CGPA: \VAR{ed.cgpa}
-\BLOCK{endfor}
-
-\section*{Skills}
-\VAR{skills|map('e')|join(', ')}
-
-\section*{Experience}
-\BLOCK{for x in experience}
-\textbf{\VAR{x.title|e}}, \VAR{x.company|e} \hfill \VAR{x.dates|e}
-\begin{itemize}
-\BLOCK{for b in x.bullets}  \item \VAR{b.text|e}
-\BLOCK{endfor}\end{itemize}
-\BLOCK{endfor}
-
-\section*{Projects}
-\BLOCK{for p in projects}
-\textbf{\VAR{p.name|e}}
-\begin{itemize}
-\BLOCK{for b in p.bullets}  \item \VAR{b.text|e}
-\BLOCK{endfor}\end{itemize}
-\BLOCK{endfor}
-\end{document}
-```
-
-CI compiles every template with `profile.example.yaml` and fails if any template does not compile or exceeds one page.
-
 ## Notion sync mapping
 
 **API version.** All calls send `Notion-Version: 2025-09-03`. In this version a database is a container of one or more *data sources*, and properties, queries and new pages belong to the data source, not the database. (Databases created in the Notion UI since late 2025 cannot be read with the older `2022-06-28` version.)
@@ -944,7 +730,7 @@ CI compiles every template with `profile.example.yaml` and fails if any template
 ### Write path (`notion_upsert` task)
 
 1. If `job.notion_page_id` is null, query the data source with filter Job ID equals `job.id` (guards against a lost id); create the page if none.
-2. Otherwise `pages.update` properties only; page body is rebuilt only when `data_json` or artifacts changed.
+2. Otherwise `pages.update` properties only; page body is rebuilt only when `data_json` changed.
 3. Body is replaced by deleting JobRadar-owned blocks (those under a "JobRadar" toggle) and appending new ones in batches of up to 100 blocks; the user's own notes outside the toggle are never touched.
 4. Long text is split into rich-text items of at most 2,000 characters.
 5. All calls go through a token-bucket limiter at 2.5 requests/second; HTTP 429 honours `Retry-After`.
@@ -962,12 +748,10 @@ CI compiles every template with `profile.example.yaml` and fails if any template
 | `skills_required` (first 10) | Skills | multi_select |
 | `salary_text` | Salary | rich_text |
 | `apply_url` or `canonical_url` | Apply Link | url |
-| latest resume `drive_url` | Resume | url |
 | count of `job_source` rows | Seen In | number |
 | chat of each sighting ("Telegram · Freshershunt", "Greenhouse · Stripe"; added to the database automatically) | Source | multi_select |
 | `scam_risk` | Scam Risk | select |
 | `id` | Job ID | rich_text |
-| (user-owned) | Cover Letter | checkbox |
 | (user-owned) | Notes | rich_text |
 
 ### Read path (`notion_poll` periodic task, every 2 minutes)
@@ -985,35 +769,26 @@ sequenceDiagram
     P->>N: data_sources/{id}/query, last_edited_time > last_poll − 1 min
     N-->>P: changed pages
     loop each page
-        P->>DB: compare Status / Cover Letter
-        alt Status → Shortlisted and no resume artifact
-            P->>Q: enqueue build_resume, build_kit
-        else Cover Letter newly checked
-            P->>Q: enqueue build_kit(cover_letter=true)
-        else other Status change
+        P->>DB: compare Status
+        alt Status changed
             P->>DB: store status (stats only)
         end
     end
 ```
 
 1. Query the data source for pages with `last_edited_time` after the previous poll time (minus 1 minute overlap).
-2. For each page, compare Status and Cover Letter with SQLite.
-3. Status → Shortlisted and no resume artifact → enqueue `build_resume` and `build_kit`. (Jobs at or above `auto_resume_above` already have one.)
-4. Cover Letter newly checked → enqueue `build_kit` with `cover_letter=true`.
-5. Any other Status change → store it locally (no action), used for stats.
+2. For each page, compare Status with SQLite.
+3. Any Status change → store it locally (no action), used for stats.
 
-*As built (v0.2.5):* `sinks/notion_sync.py`. The cursor lives in the `setting` table (`notion_poll_since`); the first poll reads every page once. A page's Status counts as yours only when it differs from what JobRadar itself shows for that job (`STATUS_OPTION`), since JobRadar's own edits also bump `last_edited_time`. Yours → `job.status`, `job.user_status_at`, one `status_change` row (funnel history). The matcher keeps updating the score of such a job but never hides or alerts on it. Two alternating task keys (`a`/`b`) carry the 2-minute loop, because re-queueing the running task would rerun it at once. Unknown options are logged once and ignored. Resume triggers on Shortlisted come with v0.3.
+*As built (v0.2.5):* `sinks/notion_sync.py`. The cursor lives in the `setting` table (`notion_poll_since`); the first poll reads every page once. A page's Status counts as yours only when it differs from what JobRadar itself shows for that job (`STATUS_OPTION`), since JobRadar's own edits also bump `last_edited_time`. Yours → `job.status`, `job.user_status_at`, one `status_change` row (funnel history). The matcher keeps updating the score of such a job but never hides or alerts on it. Two alternating task keys (`a`/`b`) carry the 2-minute loop, because re-queueing the running task would rerun it at once. Unknown options are logged once and ignored. The application statuses an older database may still use (Applied, Interview, Offer, Rejected) map to Shortlisted or Skipped.
 
 ### Page body layout
 
 ```text
 ▸ JobRadar (toggle, agent-owned)
     Why it matches: <score_reason>        Missing: <missing_skills>
-    Resume: <Drive link>
     Eligibility: batch, degree, experience
     Requirements: bullet list
-    Form answers: one code block per field (copy button)
-    Cover letter: code block
     Seen in: list of groups with message links
 Your notes (anything here is never overwritten)
 ```
@@ -1058,13 +833,10 @@ class SiteAdapter(Protocol):
 class Storage(Protocol):
     name: str
 
-    async def save(self, path: Path, job: Job) -> StoredRef: ...  # returns url or path
-
-
 class Sink(Protocol):
     name: str
 
-    async def upsert(self, job: Job, artifacts: list[Artifact]) -> str: ...
+    async def upsert(self, job: Job) -> str: ...
     async def poll_changes(self, since: datetime) -> list[UserChange]: ...
 ```
 
@@ -1081,23 +853,19 @@ Default backoff: attempt *n* waits `min(30 s × 4^(n−1), 1 h)` with ±20% jitt
 | Error | Where | Handling |
 |---|---|---|
 | `FloodWaitError` | Telegram | Sleep the given seconds; do not count as an attempt |
-| Network timeout, 5xx | fetch, LLM, Notion, Drive | Retry with backoff |
+| Network timeout, 5xx | fetch, LLM, Notion | Retry with backoff |
 | HTTP 429 | Notion, LLM (Gemini / Groq quota) | Wait `Retry-After`, then retry |
 | 403 / 404 / login wall | fetch | No retry; continue with message text only |
-| Schema validation error | LLM extract/match/tailor | One repair retry with the error shown; then mark job `needs_review` |
+| Schema validation error | LLM extract/match | One repair retry with the error shown; then mark job `needs_review` |
 | TypeSafe unavailable, 5xx or timeout | `providers/jev.py` | Retry with backoff; after the final attempt use the next provider in `matching.providers` |
 | TypeSafe 401/403 (bad or missing key) | `providers/jev.py` | Skip Jev for this run, log once, report in `jobradar doctor`; next provider |
 | TypeSafe 429 | `providers/jev.py` | Wait `Retry-After`, then retry |
 | All match providers fail | `match.py` | No score, no email; job stays in the Inbox; retried on next start |
 | Low-confidence candidate pick | `candidates.py` | Leave the field empty; layer 4 may fill role/company |
-| Daily LLM budget reached | `llm.py` | Pause LLM tasks (including auto-resumes) until midnight IST; digest reports it |
-| Ungrounded resume content | `validate.py` | Drop the item, continue; log warning |
-| Tectonic compile error | `compile.py` | Save `.log`, retry once with plain template; then `failed` |
-| PDF over page limit | `validate.py` | Trim and recompile up to 3 times |
+| Daily LLM budget reached | `llm.py` | Pause LLM tasks until midnight IST; digest reports it |
 | Notion page deleted by user | notion sync | Clear `notion_page_id`; do not recreate unless job changes |
 | Notion schema mismatch (missing property or wrong type) | start-up check | Stop with a message naming the property and the expected type |
 | Notion database has several data sources | start-up check | Stop and ask for `NOTION_DATA_SOURCE_ID` |
-| Drive token expired | `gdrive.py` | Refresh; if refresh fails, keep PDF local, leave Resume empty, and email the owner |
 | SMTP / IMAP auth failure | `email_notify.py`, `email_forward.py` | No retry storm: mark the task failed, log once, report in `jobradar doctor` and the next successful digest |
 | Process crash | worker | On restart, tasks in `running` older than 10 min return to `pending` |
 
@@ -1105,13 +873,12 @@ Default backoff: attempt *n* waits `min(30 s × 4^(n−1), 1 h)` with ±20% jitt
 
 | Command | What it does |
 |---|---|
-| `jobradar init` | Copy example configs, Telegram login, Google OAuth, Notion schema check, test email |
+| `jobradar init` | Copy example configs, Telegram login, Notion schema check, test email |
 | `jobradar run` | Start sources, workers and scheduler (Docker default command) |
 | `jobradar chats` | List Telegram chats the account can read, with ids to paste into config |
 | `jobradar add <url>` | Process one link manually |
-| `jobradar resume <job-id> [--template modern]` | Rebuild a resume now (new version) |
 | `jobradar retry --failed` | Re-queue failed tasks |
-| `jobradar doctor` | Check LLM key for the configured provider, Tectonic, Playwright, Notion properties, Drive access, SMTP and IMAP login |
+| `jobradar doctor` | Check LLM key for the configured provider, Playwright, Notion properties, SMTP and IMAP login |
 | `jobradar stats [--days 7]` | Posts, jobs, reposts merged, hidden ads, likely duplicates, failed tasks; from v0.2 B also match providers used, alerts sent, LLM/Jev spend and a suggested alert threshold |
 
 ## Testing and observability
@@ -1120,11 +887,10 @@ Default backoff: attempt *n* waits `min(30 s × 4^(n−1), 1 h)` with ±20% jitt
 
 | Level | What | How |
 |---|---|---|
-| Unit | URL canonicalisation, fingerprint, scam rules, LaTeX escaping, post-label parsing, candidate finders, composite score, decide policy (one case per rule) | pytest, table-driven cases |
+| Unit | URL canonicalisation, fingerprint, scam rules, post-label parsing, candidate finders, composite score, decide policy (one case per rule) | pytest, table-driven cases |
 | Providers | Jev and LLM providers return identical `MatchAnswers` shapes; fallback order; skills_rule never alerts | Fake SDK client, mocked LiteLLM |
 | Match evaluation | ~50 real jobs labelled "would apply / wouldn't"; compare Jev vs LLM ranking and alert precision before enabling alerts | Offline script over stored `match_result` |
 | Golden | Extraction on 100 saved real postings (`tests/fixtures/`) | Compare with hand-labelled JSON; report accuracy per field and which layer filled it; run on prompt or rule changes |
-| Resume | Grounding validator, page limit, every template compiles | `profile.example.yaml` + 10 sample jobs |
 | Integration | Full pipeline with fake Telegram source, recorded HTTP (respx / vcrpy), mock LLM, mock Notion, local SMTP/IMAP test server | pytest-asyncio |
 | Manual | End-to-end with a test Notion workspace and a test Telegram channel | Before each release |
 

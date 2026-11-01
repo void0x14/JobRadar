@@ -24,7 +24,7 @@
   <a class="gh-side gh-lead" href="/skills/{{ h.key|urlencode }}?days={{ s.days }}">
     <span class="gh-label">Lead with</span>
     <span class="gh-name">{{ h.name }}</span>
-    <span class="gh-why">{{ h.jobs }} of your {{ s.looked_at }} good matches ask for it. Put it first on your resume.</span>
+    <span class="gh-why">{{ h.jobs }} of your {{ s.looked_at }} good matches ask for it. Put it first when you apply.</span>
   </a>
   {% endif %}
 </header>
@@ -64,7 +64,7 @@
   </section>
 
   <section class="panel skill-panel">
-    <div class="panel-head"><h2>Skills you have that they want</h2><p class="faint">put these first on your resume</p></div>
+    <div class="panel-head"><h2>Skills you have that they want</h2><p class="faint">put these first when you apply</p></div>
     {% if s.have %}
     <ol class="skill-list">
       {% for r in s.have %}

@@ -1,4 +1,4 @@
-"""SQLModel tables: source, raw_message, job, job_source, artifact, task, llm_cache.
+"""SQLModel tables: source, raw_message, job, job_source, task, llm_cache.
 
 Mirrors the LLD schema. Timestamps are UTC text from `jobradar.clock.to_iso`.
 """
@@ -26,11 +26,6 @@ class JobStatus(StrEnum):
     NEW = "new"
     HIDDEN = "hidden"
     SHORTLISTED = "shortlisted"
-    RESUME_READY = "resume_ready"
-    APPLIED = "applied"
-    INTERVIEW = "interview"
-    OFFER = "offer"
-    REJECTED = "rejected"
     SKIPPED = "skipped"
 
 
@@ -110,20 +105,6 @@ class JobSource(SQLModel, table=True):
     raw_message_id: int = Field(foreign_key="raw_message.id", primary_key=True)
 
 
-class Artifact(SQLModel, table=True):
-    __tablename__ = "artifact"
-    __table_args__ = (CheckConstraint("kind IN ('resume', 'kit')", name="artifact_kind"),)
-
-    id: int | None = Field(default=None, primary_key=True)
-    job_id: str = Field(foreign_key="job.id", index=True)
-    kind: str
-    version: int = 1
-    local_path: str | None = None
-    drive_url: str | None = None  # Drive webViewLink, shown in Notion
-    content_json: str | None = None  # tailored content / answers
-    created_at: str
-
-
 class Task(SQLModel, table=True):
     __tablename__ = "task"
     __table_args__ = (
@@ -174,7 +155,7 @@ class MatchResult(SQLModel, table=True):
 
 
 class StatusChange(SQLModel, table=True):
-    """Every Status you set in Notion, with when JobRadar noticed: your application funnel."""
+    """Every Status you set in Notion, with when JobRadar noticed."""
 
     __tablename__ = "status_change"
 

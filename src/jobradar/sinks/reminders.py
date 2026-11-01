@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 CHECK_SECONDS = 3600
 WAKING_HOURS = range(8, 22)  # no reminders at night: the next check in the morning sends it
 REMINDED = "closing_reminder:"  # setting key prefix, per job
-_SHORTLISTED = (JobStatus.SHORTLISTED.value, JobStatus.RESUME_READY.value)
+_SHORTLISTED = (JobStatus.SHORTLISTED.value,)
 
 
 def _title(job: Job) -> str:

@@ -21,8 +21,13 @@ from jobradar.clock import to_iso
 from jobradar.db.models import Job, JobStatus
 from jobradar.db.repo import Repo
 from jobradar.pipeline.extract import own_post
-from jobradar.providers.skills_rule import profile_skill_keys, skill_key, technical
-from jobradar.resume.validate import COMMON_TECH, keys_in
+from jobradar.providers.skills_rule import (
+    COMMON_TECH,
+    keys_in,
+    profile_skill_keys,
+    skill_key,
+    technical,
+)
 
 # Technology names that are also plain words: only trusted from a stated skill list.
 AMBIGUOUS = {

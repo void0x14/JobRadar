@@ -22,12 +22,10 @@ from jobradar.pipeline.match import Matcher
 from jobradar.pipeline.task_types import (
     BOARD_CHECK,
     BOARDS_TICK,
-    BUILD_RESUME,
     CLOSING_CHECK,
     DIGEST,
     EXTRACT,
     FETCH,
-    FOLLOWUP_CHECK,
     FREEHIRE_CHECK,
     MATCH,
     NOTION_BODY,
@@ -46,13 +44,10 @@ from jobradar.providers.llm import LLMProvider
 from jobradar.providers.skills_rule import SkillsRule
 from jobradar.queue.tasks import TaskQueue
 from jobradar.queue.worker import Handler, Worker
-from jobradar.resume.build import ResumeBuilder
 from jobradar.sinks import notion
-from jobradar.sinks.company_replies import CompanyReplies
 from jobradar.sinks.digest import Digest
 from jobradar.sinks.email_actions import Actions, ReplyReader
 from jobradar.sinks.email_notify import AlertSender
-from jobradar.sinks.followups import FollowUpReminder
 from jobradar.sinks.notion_sync import StatusSync
 from jobradar.sinks.reminders import ClosingReminder
 from jobradar.sources.boards.freehire import FreehireWatcher
@@ -124,28 +119,14 @@ def make_reminders(
     return ClosingReminder(settings, repo, queue, liveness)
 
 
-def make_followups(settings: Settings, repo: Repo, queue: TaskQueue) -> FollowUpReminder | None:
-    """Follow-up reminders, or None when they are off or email isn't set up."""
-    notify = settings.config.notify
-    if not notify.followups:
-        return None
-    if not notify.dry_run and (missing := settings.missing("email")):
-        log.warning("follow-up reminders are off: add to .env " + ", ".join(missing))
-        return None
-    return FollowUpReminder(settings, repo, queue)
-
-
 def make_replies(settings: Settings, repo: Repo, queue: TaskQueue) -> ReplyReader | None:
-    """The reader for "I applied" / "Not interested" button emails, or None when it's off."""
+    """The reader for "Shortlist" / "Not interested" button emails, or None when it's off."""
     if (actions := Actions.load(settings, repo)) is None:
         return None
     if missing := settings.missing("email"):
         log.warning("email buttons are off: add to .env " + ", ".join(missing))
         return None
-    companies = (
-        CompanyReplies(settings, repo, actions) if settings.config.notify.company_replies else None
-    )
-    return ReplyReader(settings, repo, queue, actions, companies=companies)
+    return ReplyReader(settings, repo, queue, actions)
 
 
 def make_matcher(
@@ -155,7 +136,6 @@ def make_matcher(
     llm: LLM | None,
     alerts: AlertSender | None = None,
     liveness: LivenessChecker | None = None,
-    build_resumes: bool = False,
 ) -> Matcher | None:
     """The matcher, or None (with a warning) when matching is off or has no profile."""
     config = settings.config
@@ -187,7 +167,7 @@ def make_matcher(
         config.filters, config.scoring, alerts,
         alert_max_age_days=config.notify.alert_max_age_days, tz=config.notify.tz,
         old_posting_days=config.notify.old_posting_days,
-        liveness=liveness, build_resumes=build_resumes,
+        liveness=liveness,
     )  # fmt: skip
 
 
@@ -211,11 +191,7 @@ class Pipeline:
         llm = LLM(settings, repo) if llm_enabled(settings) else None  # shared: one rate limit
         alerts = make_alerts(settings, repo, queue)
         self.liveness = LivenessChecker()
-        self.resumes = (
-            ResumeBuilder(settings, repo, queue, llm) if settings.config.resume.enabled else None
-        )
-        build = self.resumes is not None
-        self.matcher = make_matcher(settings, repo, queue, llm, alerts, self.liveness, build)
+        self.matcher = make_matcher(settings, repo, queue, llm, alerts, self.liveness)
         extractor = Extractor(
             repo,
             queue,
@@ -232,12 +208,8 @@ class Pipeline:
             handlers[SEND_ALERTS] = alerts.send
         self.status_sync: StatusSync | None = None
         if sink is not None:
-            self.status_sync = StatusSync(
-                repo, queue, sink.client, sink.data_source_id, build_resumes=build
-            )
+            self.status_sync = StatusSync(repo, queue, sink.client, sink.data_source_id)
             handlers[NOTION_POLL] = self.status_sync.poll
-        if self.resumes is not None:
-            handlers[BUILD_RESUME] = self.resumes.build
         boards = settings.config.sources.boards
         self.boards: BoardWatcher | None = None
         if boards.enabled and boards.companies:
@@ -264,9 +236,6 @@ class Pipeline:
         self.replies = make_replies(settings, repo, queue)
         if self.replies is not None:
             handlers[REPLY_CHECK] = self.replies.tick
-        self.followups = make_followups(settings, repo, queue)
-        if self.followups is not None:
-            handlers[FOLLOWUP_CHECK] = self.followups.tick
         self.worker = Worker(queue, handlers, concurrency=4)
 
     async def aclose(self) -> None:
@@ -354,9 +323,7 @@ async def run(settings: Settings) -> None:
         pipeline.reminders.schedule()  # then every hour
     if pipeline.replies is not None:
         pipeline.replies.schedule()  # then every 2 minutes
-        log.info("reading your email buttons (I applied / Not interested) from the inbox")
-    if pipeline.followups is not None:
-        pipeline.followups.schedule(60)  # then every hour; after the first Notion read
+        log.info("reading your email buttons (Shortlist / Not interested) from the inbox")
     if pipeline.digest is not None:
         at = pipeline.digest.schedule_next()
         log.info("next digest", extra={"at": f"{at:%Y-%m-%d %H:%M}"})

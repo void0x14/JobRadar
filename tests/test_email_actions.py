@@ -1,19 +1,17 @@
 import json
-from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import pytest
 import respx
 
-from jobradar.db.models import Job, JobStatus
+from jobradar.db.models import JobStatus
 from jobradar.db.repo import Repo
 from jobradar.pipeline.task_types import NOTION_STATUS
 from jobradar.queue.tasks import TaskQueue
 from jobradar.sinks import email_actions
-from jobradar.sinks.email_actions import Actions, Incoming, ReplyReader, recruiter_email
+from jobradar.sinks.email_actions import Actions, Incoming, ReplyReader
 from jobradar.sinks.email_notify import build_email
-from jobradar.sinks.notion_sync import FOLLOWED_UP
 from tests.conftest import FakeClock
 from tests.test_digest import settings
 
@@ -35,8 +33,7 @@ def add(repo: Repo, job_id: str = JOB, status: JobStatus = JobStatus.NEW) -> Non
 
 
 def mail(subject: str, sender: str = ME, auth: str = "", n: int = 1) -> Incoming:
-    sent = datetime(2026, 10, 19, 6, 0, tzinfo=UTC)
-    return Incoming(str(n), f"<m{n}@x>", sender, subject, auth, sent)
+    return Incoming(str(n), f"<m{n}@x>", sender, subject, auth)
 
 
 def subject_of(link: str) -> str:
@@ -54,18 +51,20 @@ def test_buttons_are_mailto_links_to_yourself_with_a_signed_subject(repo: Repo) 
     add(repo)
     job = repo.get_job(JOB)
     assert job is not None
-    (applied, applied_link), (skip, _) = actions().job_links(job)
-    assert (applied, skip) == ("I applied", "Not interested")
-    assert applied_link.startswith(f"mailto:{ME}?subject=")
-    subject = subject_of(applied_link)
-    assert subject.startswith("JobRadar action: applied | Software Engineer @ Acme | a1b2c3d4e5f6.")
-    assert actions().parse(subject) == ("applied", "a1b2c3d4e5f6")
+    (shortlist, shortlist_link), (skip, _) = actions().job_links(job)
+    assert (shortlist, skip) == ("Shortlist", "Not interested")
+    assert shortlist_link.startswith(f"mailto:{ME}?subject=")
+    subject = subject_of(shortlist_link)
+    assert subject.startswith(
+        "JobRadar action: shortlist | Software Engineer @ Acme | a1b2c3d4e5f6."
+    )
+    assert actions().parse(subject) == ("shortlist", "a1b2c3d4e5f6")
 
 
 def test_forged_or_altered_subjects_are_refused() -> None:
-    real = f"JobRadar action: applied | x | a1b2c3d4e5f6.{actions().sign('applied', JOB)}"
+    real = f"JobRadar action: shortlist | x | a1b2c3d4e5f6.{actions().sign('shortlist', JOB)}"
     assert actions().parse(real) is not None
-    assert actions().parse(real.replace("applied", "skip", 1)) is None  # other action, same sig
+    assert actions().parse(real.replace("shortlist", "skip", 1)) is None  # other action, same sig
     assert actions().parse(real.replace("a1b2", "ffff")) is None  # other job
     assert Actions("other-key", ME).parse(real) is None  # someone else's JobRadar
     assert actions().parse("Re: your application") is None
@@ -79,10 +78,15 @@ def test_only_your_own_address_and_no_failed_checks() -> None:
     assert not a.trusted(ME, "mx.google.com; spf=fail; dmarc=fail")
 
 
-def test_no_buttons_once_you_applied(repo: Repo) -> None:
-    add(repo, status=JobStatus.APPLIED)
+def test_buttons_follow_the_status(repo: Repo) -> None:
+    add(repo, status=JobStatus.SHORTLISTED)
     job = repo.get_job(JOB)
-    assert job is not None and actions().job_links(job) == []
+    assert job is not None
+    assert [label for label, _ in actions().job_links(job)] == ["Not interested"]
+    add(repo, "b" * 40, status=JobStatus.SKIPPED)
+    skipped = repo.get_job("b" * 40)
+    assert skipped is not None
+    assert [label for label, _ in actions().job_links(skipped)] == ["Shortlist"]
 
 
 def test_alert_email_carries_the_buttons(repo: Repo) -> None:
@@ -92,8 +96,8 @@ def test_alert_email_carries_the_buttons(repo: Repo) -> None:
     msg = build_email([job], ME, ME, actions=actions())
     html = str(msg.get_body(("html",)).get_content())  # type: ignore[union-attr]
     plain = str(msg.get_body(("plain",)).get_content())  # type: ignore[union-attr]
-    assert "I applied</a>" in html and "Not interested</a>" in html and "mailto:" in html
-    assert "I applied: mailto:" in plain
+    assert "Shortlist</a>" in html and "Not interested</a>" in html and "mailto:" in html
+    assert "Shortlist: mailto:" in plain
 
 
 # ---- acting on your emails ----------------------------------------------------------------
@@ -103,44 +107,34 @@ def subject(action: str, job_id: str = JOB) -> str:
     return f"JobRadar action: {action} | x | {job_id[:12]}.{actions().sign(action, job_id)}"
 
 
-async def test_i_applied_and_not_interested(repo: Repo, queue: TaskQueue, clock: FakeClock) -> None:
+async def test_shortlist_and_not_interested(repo: Repo, queue: TaskQueue, clock: FakeClock) -> None:
     other = "b" * 40
     add(repo)
     add(repo, other)
     r = reader(repo, queue, clock)
-    assert r.apply(mail(subject("applied"))) == "applied: Software Engineer @ Acme"
+    assert r.apply(mail(subject("shortlist"))) == "shortlist: Software Engineer @ Acme"
     assert r.apply(mail(subject("skip", other))) == "skip: Software Engineer @ Acme"
     job, skipped = repo.get_job(JOB), repo.get_job(other)
-    assert job is not None and job.status == JobStatus.APPLIED.value and job.user_status_at
+    assert job is not None and job.status == JobStatus.SHORTLISTED.value and job.user_status_at
     assert skipped is not None and skipped.status == JobStatus.SKIPPED.value
     task = queue.claim([NOTION_STATUS])
-    assert task is not None and task.key == JOB and task.payload == {"status": "Applied"}
+    assert task is not None and task.key == JOB and task.payload == {"status": "Shortlisted"}
 
 
 async def test_statuses_only_move_forward(repo: Repo, queue: TaskQueue, clock: FakeClock) -> None:
-    add(repo, status=JobStatus.INTERVIEW)
+    add(repo, status=JobStatus.SKIPPED)
     r = reader(repo, queue, clock)
-    assert "ignored" in (r.apply(mail(subject("applied"))) or "")
     assert "ignored" in (r.apply(mail(subject("skip"))) or "")
     job = repo.get_job(JOB)
-    assert job is not None and job.status == JobStatus.INTERVIEW.value
-
-
-async def test_i_followed_up_sets_the_date(repo: Repo, queue: TaskQueue, clock: FakeClock) -> None:
-    add(repo, status=JobStatus.APPLIED)
-    r = reader(repo, queue, clock)
-    assert r.apply(mail(subject("followed up"))) == "followed up: Software Engineer @ Acme"
-    assert repo.get_setting(FOLLOWED_UP + JOB) == "2026-10-19"  # the email's own date, IST
-    task = queue.claim([NOTION_STATUS])
-    assert task is not None and task.payload == {"followed_up": "2026-10-19"}
+    assert job is not None and job.status == JobStatus.SKIPPED.value
 
 
 async def test_strangers_and_unknown_jobs(repo: Repo, queue: TaskQueue, clock: FakeClock) -> None:
     add(repo)
     r = reader(repo, queue, clock)
-    assert r.apply(mail(subject("applied"), sender="x@evil.com")) is None
-    assert r.apply(mail("JobRadar action: applied | x | a1b2c3d4e5f6.00000000")) is None
-    assert r.apply(mail(subject("applied", "c" * 40))) == "applied: job cccccccccccc not found"
+    assert r.apply(mail(subject("shortlist"), sender="x@evil.com")) is None
+    assert r.apply(mail("JobRadar action: shortlist | x | a1b2c3d4e5f6.00000000")) is None
+    assert r.apply(mail(subject("shortlist", "c" * 40))) == "shortlist: job cccccccccccc not found"
     job = repo.get_job(JOB)
     assert job is not None and job.status == JobStatus.NEW.value
 
@@ -155,55 +149,35 @@ async def test_each_email_once_then_archived(
         def logout(self) -> None:
             pass
 
-    inbox = [mail(subject("applied"), n=1), mail("hello", n=2)]
+    inbox = [mail(subject("shortlist"), n=1), mail("hello", n=2)]
     monkeypatch.setattr(email_actions, "fetch", lambda s, since: (FakeImap(), inbox))
     monkeypatch.setattr(email_actions, "archive", lambda imap, uids: archived.append(uids))
     r = reader(repo, queue, clock)
-    assert await r.check_now() == ["applied: Software Engineer @ Acme"]
+    assert await r.check_now() == ["shortlist: Software Engineer @ Acme"]
     assert archived == [["1"]]  # "hello" isn't a button email: left alone
     assert await r.check_now() == []  # already done; archived again in case it came back
     assert archived[-1] == ["1"]
 
 
-# ---- the follow-up's recipient --------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("apply_url", "post", "to"),
-    [
-        ("mailto:jobs@acme.com?subject=CV", None, "jobs@acme.com"),
-        (None, "Send your CV to hr.team@acme.co.in today", "hr.team@acme.co.in"),
-        (None, "Questions: priya@acmecorp.com", "priya@acmecorp.com"),  # company's own domain
-        (None, "Join our channel admin: freshersjobs@gmail.com", None),
-        (None, "Contact: someone@unrelated.io", None),
-        (None, None, None),
-    ],
-)
-def test_recruiter_email(apply_url: str | None, post: str | None, to: str | None) -> None:
-    job = Job(id="x", company="Acme Corp", created_at="", updated_at="")
-    assert recruiter_email(job, apply_url, post) == to
-
-
 # ---- Notion ---------------------------------------------------------------------------------
 
 
-async def test_notion_gets_your_status_and_followed_up_date(repo: Repo) -> None:
+async def test_notion_gets_your_status(repo: Repo) -> None:
     from jobradar.sinks import notion
     from tests.test_notion import API, DS, http, schema_response
     from tests.test_notion import settings as notion_settings
 
-    add(repo, status=JobStatus.APPLIED)
+    add(repo, status=JobStatus.SHORTLISTED)
     repo.set_notion_page(JOB, "page-1")
     with respx.mock(base_url=API, assert_all_called=False) as api:
         api.get("/databases/db-1").respond(json={"data_sources": [{"id": DS, "name": "Jobs"}]})
         api.get(f"/data_sources/{DS}").respond(json=schema_response())
         patch = api.patch("/pages/page-1").respond(json={})
         sink = await notion.connect(notion_settings(), http=http())
-        await sink.set_by_you(repo, JOB, "Applied", "2026-10-19")
+        await sink.set_by_you(repo, JOB, "Shortlisted")
         await sink.aclose()
     body: dict[str, Any] = json.loads(patch.calls[0].request.content)
-    assert body == {"properties": {"Status": {"select": {"name": "Applied"}},
-                                   "Followed Up": {"date": {"start": "2026-10-19"}}}}  # fmt: skip
+    assert body == {"properties": {"Status": {"select": {"name": "Shortlisted"}}}}
 
 
 def test_buttons_off_without_a_mailbox(repo: Repo) -> None:
@@ -289,7 +263,7 @@ def test_archive_elsewhere_or_failing_only_marks_read(caplog: pytest.LogCaptureF
 async def test_an_ignored_button_tells_you(
     repo: Repo, queue: TaskQueue, clock: FakeClock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    add(repo, status=JobStatus.APPLIED)  # you applied, then tapped "Not interested" on it
+    add(repo, status=JobStatus.SKIPPED)  # you skipped it, then tapped "Not interested" again
 
     class FakeImap:
         def logout(self) -> None:
@@ -302,12 +276,12 @@ async def test_an_ignored_button_tells_you(
     monkeypatch.setattr(email_actions, "archive", lambda imap, uids: None)
     monkeypatch.setattr("jobradar.sinks.email_notify.smtp_send", lambda s, m: sent.append(m))
     r = reader(repo, queue, clock)
-    assert await r.check_now() == ["skip ignored for Software Engineer @ Acme: it's applied now"]
+    assert await r.check_now() == ["skip ignored for Software Engineer @ Acme: it's skipped now"]
     assert (
         sent[0]["Subject"] == "[JobRadar] “Not interested” didn't change Software Engineer @ Acme"
     )
     body = str(sent[0].get_body(("plain",)).get_content())
-    assert "is Applied already" in body and f"http://127.0.0.1:8080/jobs/{JOB}" in body
+    assert "is Skipped already" in body and f"http://127.0.0.1:8080/jobs/{JOB}" in body
     job = repo.get_job(JOB)
-    assert job is not None and job.status == JobStatus.APPLIED.value
+    assert job is not None and job.status == JobStatus.SKIPPED.value
     assert await r.check_now() == [] and len(sent) == 1  # handled once: no second note

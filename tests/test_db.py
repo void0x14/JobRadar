@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,40 @@ def test_pragmas(engine: Engine) -> None:
     with engine.connect() as c:
         assert c.execute(text("PRAGMA journal_mode")).scalar() == "wal"
         assert c.execute(text("PRAGMA foreign_keys")).scalar() == 1
+
+
+def test_jobs_left_with_an_application_status_are_migrated(tmp_path: Path) -> None:
+    """Applied, Interview, Offer, Rejected and Resume ready are gone: the jobs that still
+    carry one become Shortlisted (you went for it) or Skipped (the company turned you down)."""
+    from sqlalchemy.schema import CreateTable
+
+    from jobradar.db import models
+
+    eng = make_engine(tmp_path / "data" / "old.db")
+    init_db(eng)
+    # Rebuild `job` with the CHECK an older database has, so a status that no longer exists
+    # can be stored in it.
+    legacy = ", ".join(
+        repr(s) for s in ("resume_ready", "applied", "interview", "offer", "rejected")
+    )
+    sql = str(CreateTable(models.Job.__table__).compile(eng))
+    sql = re.sub(
+        r"CHECK \(status IN \(([^)]*)\)\)",
+        lambda m: f"CHECK (status IN ({m.group(1)}, {legacy}))",
+        sql,
+    )
+    with eng.begin() as c:
+        c.execute(text("DROP TABLE job"))
+        c.execute(text(sql))
+    repo = Repo(eng)
+    repo.get_or_create_job("a", "https://acme.com/a")
+    repo.get_or_create_job("b", "https://acme.com/b")
+    with eng.begin() as c:
+        c.execute(text("UPDATE job SET status = 'applied' WHERE id = 'a'"))
+        c.execute(text("UPDATE job SET status = 'rejected' WHERE id = 'b'"))
+    init_db(eng)
+    assert repo.get_job("a") is not None and repo.get_job("a").status == "shortlisted"  # type: ignore[union-attr]
+    assert repo.get_job("b") is not None and repo.get_job("b").status == "skipped"  # type: ignore[union-attr]
 
 
 def test_upsert_source_is_idempotent(repo: Repo) -> None:
@@ -126,5 +161,5 @@ def test_jobs_from_source(repo: Repo) -> None:
         raw, _ = repo.save_raw_message(source_id, str(n), "2026-10-16T08:00:00.000000Z", "post")
         repo.get_or_create_job(f"j{n}", f"https://x.com/{n}")
         repo.add_job_source(f"j{n}", raw)
-    repo.set_user_status("j1", JobStatus.APPLIED)  # you moved it in Notion: left alone
+    repo.set_user_status("j1", JobStatus.SHORTLISTED)  # you moved it in Notion: left alone
     assert repo.jobs_from_source("workday · accenture") == ["j0"]

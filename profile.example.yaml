@@ -1,6 +1,6 @@
-# Copy to config/profile.yaml. The ONLY source of resume facts:
+# Copy to config/profile.yaml. What the matcher knows about you:
 # JobRadar may rephrase these, never add to them. Every item and bullet needs a unique id.
-# **Bold** marks words printed in bold on your resume. Keep numbers exactly as they are true.
+# **Bold** marks words printed in bold. Keep numbers exactly as they are true.
 
 basics:
   name: Your Name
@@ -92,8 +92,8 @@ projects:
         text: Designed a **durable SQLite task queue** with retries and crash recovery, so no post is lost on restart.
         tags: [sqlite, task-queue, reliability]
       - id: p3
-        text: Generated **one-page LaTeX resumes** per job, with a checker that rejects any invented number or skill.
-        tags: [llm, latex, validation]
+        text: Reads job channels and boards, scores every posting against a profile and emails the strong matches.
+        tags: [llm, sqlite, fastapi]
       - id: p4
         text: Asks the **Greenhouse, Lever and Ashby APIs** whether a posting is still open before scoring it.
         tags: [rest-api, api-integration]

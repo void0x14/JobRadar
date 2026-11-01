@@ -60,7 +60,7 @@ def _posts(group: list[JobLine]) -> int:
 
 
 # Statuses that mean "I'd want this job": what the alert threshold should catch.
-WANTED = ("shortlisted", "resume_ready", "applied", "interview", "offer")
+WANTED = ("shortlisted",)
 MIN_WANTED = 5
 
 
@@ -69,7 +69,7 @@ def suggest_alert_above(scores: dict[str, list[int]], current: int | None) -> st
     wanted = sorted(s for status in WANTED for s in scores.get(status, []))
     if len(wanted) < MIN_WANTED:
         return (
-            f"Mark at least {MIN_WANTED} jobs Shortlisted or Applied in Notion to get an alert "
+            f"Mark at least {MIN_WANTED} jobs Shortlisted in Notion to get an alert "
             f"threshold suggestion ({len(wanted)} so far)."
         )
     floor = wanted[int(0.2 * (len(wanted) - 1))]  # 4 in 5 of the jobs you went for score above
@@ -159,19 +159,12 @@ def render(report: Report, max_groups: int = 10) -> str:
             out.append(f"  {ad.sightings:>4} posts  {ad.url[:90]}")
 
     s = report.statuses
-    out += ["", "Your applications (all time; set in Notion)"]
-    funnel = [("shortlisted", "Shortlisted"), ("applied", "Applied"), ("interview", "Interview"),
-              ("offer", "Offer"), ("rejected", "Rejected"), ("skipped", "Skipped")]  # fmt: skip
+    out += ["", "Your shortlist (all time; set in Notion or on the dashboard)"]
+    funnel = [("shortlisted", "Shortlisted"), ("skipped", "Skipped"), ("hidden", "Hidden")]
     for key, label in funnel:
         moved = report.moved.get(key, 0)
         recent = f"   +{moved} in the last {report.days} days" if moved else ""
         out.append(f"  {label:<21} {s.get(key, 0):>6}{recent}")
-    applied = sum(s.get(k, 0) for k in ("applied", "interview", "offer", "rejected"))
-    replies = s.get("interview", 0) + s.get("offer", 0)
-    if applied:
-        out.append(
-            f"  Reply rate            {replies / applied:>6.0%}   interviews + offers / applied"
-        )
     out.append(f"  Alerts sent           {report.alerts:>6}   in the last {report.days} days")
     if report.suggestion:
         out += ["", "Alert threshold", f"  {report.suggestion}"]

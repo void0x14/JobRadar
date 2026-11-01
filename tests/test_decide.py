@@ -6,7 +6,7 @@ from jobradar.config import FiltersConfig, MatchingConfig, ScoringConfig
 from jobradar.pipeline.decide import decide
 from jobradar.providers.base import MatchAnswers
 
-SCORING = ScoringConfig(hide_below=40, alert_above=75, auto_resume_above=85)
+SCORING = ScoringConfig(hide_below=40, alert_above=75)
 
 
 def answers(**kw: Any) -> MatchAnswers:

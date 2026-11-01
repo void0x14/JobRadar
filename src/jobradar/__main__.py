@@ -18,7 +18,7 @@ from jobradar.config import ConfigError, Settings, load_settings
 
 app = typer.Typer(
     name="jobradar",
-    help="Watch job channels, rank postings, build tailored resumes, track it all in Notion.",
+    help="Watch job channels, rank postings and send you the ones worth your time.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -241,111 +241,6 @@ def extract(
 
 
 @app.command()
-def resume(
-    job_id: Annotated[
-        str | None,
-        typer.Argument(help="Job ID from Notion's Job ID column (the first 8 characters do)."),
-    ] = None,
-    plain: Annotated[
-        bool, typer.Option("--plain", help="Use profile.yaml as written: no tailoring.")
-    ] = False,
-    template: Annotated[
-        str | None, typer.Option(help="Template name or path to a .tex.j2 file.")
-    ] = None,
-) -> None:
-    """Build a resume for a job now (a new version), or with no job, preview your profile."""
-    import json
-
-    from jobradar import app as application
-    from jobradar.llm import LLM
-    from jobradar.profile import load_profile, resume_problems
-    from jobradar.queue.tasks import PermanentError, RetryableError
-    from jobradar.resume import ats
-    from jobradar.resume.build import ResumeBuilder, fit_to_pages
-    from jobradar.resume.compile import CompileError
-    from jobradar.resume.render import content_from_profile, render
-    from jobradar.resume.validate import primary_ids
-
-    settings = _settings()
-    out = settings.config.storage.local_dir
-    if job_id is None:
-        profile = load_profile(settings.config.matching.profile_path)
-        if problems := resume_problems(profile):
-            _fail("profile.yaml: " + "; ".join(problems))
-        pdf = out / "profile_preview.pdf"
-        pdf.parent.mkdir(parents=True, exist_ok=True)
-        content = content_from_profile(profile)
-        name = template or settings.config.resume.template
-        try:
-            render(content, name)
-        except ValueError as e:
-            _fail(str(e))
-        limit = settings.config.resume.max_pages
-
-        async def preview() -> None:
-            try:
-                pages, printed, dropped = await fit_to_pages(
-                    content, name, pdf, limit, primary_ids(profile)
-                )
-            except CompileError as e:
-                _fail(f"{e}\nThe .tex is at {pdf.with_suffix('.tex')}.")
-                raise
-            typer.echo(f"{pdf} ({pages} page(s)); .tex next to it.")
-            _ats_report(ats.check(pdf, printed, [], profile).as_record())
-            if dropped:
-                typer.echo(
-                    f"Left out to fit {limit} page(s), least relevant first: "
-                    f"{', '.join(dropped)} (tailored resumes choose per job)."
-                )
-
-        _run(preview())
-        return
-
-    repo, queue = application.open_store()
-    matches = repo.jobs_with_prefix(job_id.strip().lower())
-    if len(matches) != 1:
-        _fail(f"No job with ID {job_id!r}." if not matches
-              else f"{len(matches)} jobs start with {job_id!r}; give more characters.")  # fmt: skip
-    llm = LLM(settings, repo) if not plain and application.llm_enabled(settings) else None
-    builder = ResumeBuilder(settings, repo, queue, llm)
-
-    async def build() -> None:
-        try:
-            artifact = await builder.build_job(matches[0], tailored=not plain, template=template)
-        except PermanentError as e:
-            _fail(str(e))
-            raise
-        except RetryableError as e:
-            _fail(f"Gemini is busy right now ({str(e).splitlines()[0][:120]}). Try again in a "
-                  "minute, or use --plain.")  # fmt: skip
-            raise
-        record = json.loads(artifact.content_json or "{}")
-        typer.echo(f"{artifact.local_path} (v{artifact.version}, {record.get('pages')} page(s), "
-                   f"{'tailored' if record.get('tailored') else 'as written'})")  # fmt: skip
-        for fixed in record.get("fixed", []):
-            typer.secho(f"  kept your wording: {fixed}", dim=True)
-        _ats_report(record.get("ats") or {})
-        typer.echo("Notion's Resume column updates when `jobradar run` is running.")
-
-    _run(build())
-
-
-def _ats_report(report: dict[str, Any]) -> None:
-    """What hiring software would read from the PDF: problems, and the job's skills on it."""
-    if problems := report.get("problems"):
-        for problem in problems:
-            typer.secho(f"  hiring software: {problem}", fg="yellow")
-        typer.secho("  These come from the template, not your profile: fix them in the .tex.j2.",
-                    dim=True)  # fmt: skip
-    else:
-        typer.secho("  ✓ reads cleanly as text: email, phone, dates and words intact", fg="green")
-    on, off = report.get("skills_on_resume") or [], report.get("skills_not_on_resume") or []
-    if on or off:
-        typer.echo(f"  The job's skills you have: {len(on)} of {len(on) + len(off)} on the page"
-                   + (f"; not printed: {', '.join(off)}" if off else ""))  # fmt: skip
-
-
-@app.command()
 def retry(
     failed: Annotated[bool, typer.Option("--failed", help="Re-queue failed tasks.")] = False,
 ) -> None:
@@ -361,7 +256,7 @@ def retry(
 
 @app.command()
 def doctor() -> None:
-    """Check keys, Tectonic, Playwright, Notion properties and Drive access."""
+    """Check keys, Playwright, Notion properties and email access."""
     _not_implemented("v0.4")
 
 
@@ -811,66 +706,14 @@ def digest(
 
 
 @app.command()
-def followups(
-    now: Annotated[
-        bool, typer.Option("--now", help="Email the follow-ups that are due right away.")
-    ] = False,
-) -> None:
-    """Jobs you set to Applied: days without a reply and when a follow-up draft is due."""
-    from jobradar import app as application
-    from jobradar.queue.tasks import PermanentError, RetryableError
-    from jobradar.sinks.followups import MAX_REMINDERS, QUIET_AFTER, FollowUpReminder
-
-    settings = _settings()
-    notify = settings.config.notify
-    repo, queue = application.open_store()
-    reminder = FollowUpReminder(settings, repo, queue)
-    jobs = repo.jobs_applied()
-    if not jobs:
-        typer.echo("No job has Status Applied in Notion yet (JobRadar reads it every 2 minutes "
-                   "while `jobradar run` is running).")  # fmt: skip
-        return
-    clock = datetime.now(UTC)
-    typer.echo(f"Follow-up drafts come {notify.followup_after_days} days after Applied (or your "
-               f"Followed Up date) with no reply, at most {MAX_REMINDERS} per job.")  # fmt: skip
-    for job in jobs:
-        applied, since, sent = reminder.status(job)
-        quiet = (clock - since).days
-        next_at = since + reminder.after
-        if sent >= MAX_REMINDERS:
-            when = f"done: {sent} follow-ups sent"
-        elif clock - since > QUIET_AFTER:
-            when = f"quiet for {quiet} days: no more reminders"
-        elif next_at <= clock:
-            when = "due now"
-        else:
-            when = f"next draft {next_at.astimezone(notify.tz):%d %b}"
-        role = f"{job.role or 'Role not stated'} @ {job.company or '?'}"
-        typer.echo(f"  {job.id[:8]}  {role[:48]:<48}  applied "
-                   f"{applied.astimezone(notify.tz):%d %b}  {when}")  # fmt: skip
-    if not now:
-        return
-    if not notify.followups:
-        _fail("notify.followups is false in config.yaml.")
-    if not notify.dry_run and (missing := settings.missing("email")):
-        _fail("Add to .env first: " + ", ".join(missing))
-    try:
-        outcome = asyncio.run(reminder.check_now())
-    except (PermanentError, RetryableError) as e:
-        _fail(f"Not sent: {e}")
-    typer.secho(f"✓ {outcome}", fg="green")
-
-
-@app.command()
 def replies(
     check: Annotated[
         bool, typer.Option("--check", help="Read the inbox now and act on button emails.")
     ] = False,
 ) -> None:
-    """The "I applied" / "Not interested" / "I followed up" buttons in JobRadar's emails."""
+    """The "Shortlist" / "Not interested" buttons in JobRadar's emails."""
     from jobradar import app as application
     from jobradar.queue.tasks import PermanentError, RetryableError
-    from jobradar.sinks.company_replies import CompanyReplies
     from jobradar.sinks.email_actions import Actions, ReplyReader
 
     settings = _settings()
@@ -887,11 +730,7 @@ def replies(
         typer.echo("Run with --check to read the inbox now.")
         return
     try:
-        companies = (CompanyReplies(settings, repo, actions)
-                     if settings.config.notify.company_replies else None)  # fmt: skip
-        done = asyncio.run(
-            ReplyReader(settings, repo, queue, actions, companies=companies).check_now()
-        )
+        done = asyncio.run(ReplyReader(settings, repo, queue, actions).check_now())
     except (PermanentError, RetryableError) as e:
         _fail(str(e))
     for line in done:
@@ -927,18 +766,8 @@ def skills(days: Annotated[int, typer.Option(help="Look back this many days.")] 
 
 
 @app.command()
-def sources() -> None:
-    """Each chat, board or page you applied from, and how many reached the next round."""
-    from jobradar import app as application
-    from jobradar.by_source import by_source, render
-
-    repo, _ = application.open_store()
-    typer.echo(render(by_source(repo)))
-
-
-@app.command()
 def web() -> None:
-    """Your jobs and applications on a page: http://127.0.0.1:8080 (Ctrl+C to stop)."""
+    """Your jobs on a page: http://127.0.0.1:8080 (Ctrl+C to stop)."""
     try:
         import fastapi  # noqa: F401
         import uvicorn  # noqa: F401

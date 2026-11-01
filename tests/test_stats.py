@@ -83,8 +83,8 @@ def test_empty_database(repo: Repo, clock: FakeClock) -> None:
 def test_alert_threshold_suggestion() -> None:
     from jobradar.stats import suggest_alert_above
 
-    assert "at least 5" in (suggest_alert_above({"applied": [90, 80]}, 75) or "")
-    scores = {"applied": [92, 88, 81, 79, 77], "interview": [86], "skipped": [80, 40]}
+    assert "at least 5" in (suggest_alert_above({"shortlisted": [90, 80]}, 75) or "")
+    scores = {"shortlisted": [92, 88, 81, 79, 77, 86], "skipped": [80, 40]}
     line = suggest_alert_above(scores, 85) or ""
     assert "Suggested scoring.alert_above: 75 (now 85)" in line
     assert "1 job(s) you skipped also score that high" in line

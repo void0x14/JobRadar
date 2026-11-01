@@ -45,45 +45,9 @@ def test_today_lists_recent_good_matches_you_havent_touched(repo: Repo, clock: F
     add(repo, "good", score=80)
     add(repo, "best", score=99)
     add(repo, "weak", score=60)
-    add(repo, "applied", score=99, status=JobStatus.APPLIED, you=True)
+    add(repo, "shortlisted", score=99, status=JobStatus.SHORTLISTED, you=True)
     add(repo, "hidden", score=None, status=JobStatus.HIDDEN)
     assert [c.id for c in views.today(repo, 75, clock(), TZ)] == ["best", "good"]
-
-
-def test_board_puts_each_status_in_its_column(repo: Repo, clock: FakeClock) -> None:
-    add(repo, "s", status=JobStatus.SHORTLISTED, you=True)
-    clock.advance(60)
-    add(repo, "r", status=JobStatus.RESUME_READY)  # JobRadar built the resume, later
-    add(repo, "a1", status=JobStatus.APPLIED, you=True)
-    clock.advance(60)
-    add(repo, "a2", status=JobStatus.APPLIED, you=True)
-    add(repo, "x", status=JobStatus.REJECTED, you=True)
-    add(repo, "skip", status=JobStatus.SKIPPED, you=True)
-    board = views.board(repo, settings(), clock())
-    columns = {c.key: [b.card.id for b in c.cards] for c in board}
-    assert columns == {
-        "shortlisted": ["r", "s"],
-        "applied": ["a2", "a1"],  # the latest change first
-        "interview": [],
-        "offer": [],
-        "rejected": ["x"],
-    }
-
-
-def test_board_cards_track_follow_ups_and_replies(repo: Repo, clock: FakeClock) -> None:
-    add(repo, "quiet", company="Rubrik", status=JobStatus.APPLIED, you=True)
-    add(repo, "heard", company="Acme", status=JobStatus.APPLIED, you=True)
-    repo.set_setting("company_replied:heard", json.dumps({"kind": "interview"}))
-    repo.save_artifact("quiet", "resume", 1, "out.pdf", "{}")
-    clock.advance(4 * 86400)
-    applied = {b.card.id: b for b in views.board(repo, settings(), clock())[1].cards}
-    quiet, heard = applied["quiet"].track, applied["heard"].track
-    assert (quiet.resume, quiet.nudge_in, quiet.next_nudge, quiet.waited) == (True, 6, "18 Oct", 40)
-    assert heard.replied == "interview" and heard.next_nudge == ""  # no nudging after a reply
-    repo.set_setting("followed_up:quiet", "2026-10-11")  # you followed up: the wait restarts
-    again = {b.card.id: b for b in views.board(repo, settings(), clock())[1].cards}["quiet"].track
-    assert again.followed_up == "11 Oct" and again.next_nudge == "21 Oct"
-    assert views.board(repo, settings(), clock())[1].note.startswith("1 replied")
 
 
 def test_search_and_show(repo: Repo, clock: FakeClock) -> None:
@@ -119,8 +83,7 @@ def test_job_detail(repo: Repo, clock: FakeClock) -> None:
     assert source.id is not None
     raw, _ = repo.save_raw_message(source.id, "77", "2026-10-08T08:30:00Z", "Rubrik hiring")
     repo.add_job_source("j", raw)
-    repo.set_user_status("j", JobStatus.APPLIED)
-    repo.save_artifact("j", "resume", 1, "output/Rubrik_SWE_20261008_v1.pdf", "{}")
+    repo.set_user_status("j", JobStatus.SHORTLISTED)
     d = views.job_detail(repo, "j", TZ, clock())
     assert d is not None
     assert ("Experience", "0-1 years") in d.facts and ("Closes", "24 Oct") in d.facts
@@ -128,14 +91,13 @@ def test_job_detail(repo: Repo, clock: FakeClock) -> None:
     assert [(s.where, s.at, s.link) for s in d.seen_in] == [
         ("Telegram · Freshershunt", "8 Oct, 14:00", "https://t.me/c/1234/77")
     ]
-    assert d.history == [("Applied", "8 Oct, 14:30")]  # 09:00 UTC in Asia/Kolkata
-    assert [(f.name, f.kind) for f in d.files] == [("Rubrik_SWE_20261008_v1.pdf", "resume")]
+    assert d.history == [("Shortlisted", "8 Oct, 14:30")]  # 09:00 UTC in Asia/Kolkata
     assert views.job_detail(repo, "nope", TZ, clock()) is None
 
 
 def test_blip(repo: Repo, clock: FakeClock) -> None:
     add(repo, "a", company="Rubrik", role="Backend Engineer", score=92)
-    add(repo, "b", status=JobStatus.APPLIED, you=True)
+    add(repo, "b", status=JobStatus.SHORTLISTED, you=True)
     cards = views.today(repo, 75, clock(), TZ)
     assert (
         views.blip_says(cards, 75)
@@ -145,7 +107,7 @@ def test_blip(repo: Repo, clock: FakeClock) -> None:
     assert views.greeting(clock(), TZ, "Sameer") == "Good afternoon, Sameer."  # 14:30 IST
 
     ov = views.overview(repo, 75, clock(), TZ, "Sameer Kumar")
-    assert (ov.today, ov.active, ov.applied, ov.name, ov.awake) == (1, 1, 1, "Sameer", False)
+    assert (ov.today, ov.active, ov.name, ov.awake) == (1, 1, "Sameer", False)
     source = repo.upsert_source(Platform.TELEGRAM, "-1001", "Chat")
     assert source.id is not None
     repo.save_raw_message(source.id, "1", "2026-10-08T08:59:00.000000Z", "hi")
@@ -184,10 +146,10 @@ def client(repo: Repo, clock: FakeClock) -> TestClient:
 
 def test_pages_render(client: TestClient, repo: Repo) -> None:
     add(repo, "a", company="Rubrik")
-    add(repo, "b", company="Acme", status=JobStatus.APPLIED, you=True)
+    add(repo, "b", company="Acme", status=JobStatus.SHORTLISTED, you=True)
     today = client.get("/")
     assert today.status_code == 200 and "Rubrik" in today.text and "Acme" not in today.text
-    assert "Acme" in client.get("/applications").text
+    assert "Acme" in client.get("/jobs?q=acme").text
     assert "Rubrik" in client.get("/jobs?q=rub").text
     job = client.get("/jobs/a")
     assert job.status_code == 200 and "https://acme.com/jobs/a" in job.text
@@ -267,22 +229,6 @@ def test_sources_group_boards(repo: Repo, clock: FakeClock) -> None:
     seen("weak", Platform.TELEGRAM, "-1002", "Spam jobs")
     got = [(s.name, s.jobs, s.share) for s in views.sources(repo, 75, clock())]
     assert got == [("Freshershunt", 3, 100), ("Company boards", 2, 67)]
-
-
-def test_funnel_counts_jobs_that_moved_on(repo: Repo, clock: FakeClock) -> None:
-    add(repo, "a", score=90, status=JobStatus.APPLIED, you=True)
-    add(repo, "b", score=95, status=JobStatus.INTERVIEW, you=True)
-    clock.advance(3600)  # a change within 10 minutes would be taken as a misclick
-    repo.set_user_status("b", JobStatus.REJECTED)  # rejected after the interview
-    add(repo, "c", score=80)
-    add(repo, "d", score=30, status=JobStatus.HIDDEN)
-    add(repo, "x", score=None, status=JobStatus.DISCARDED)
-    steps = {s.name: (s.jobs, s.rate) for s in views.funnel(repo, 75)}
-    assert steps["Found"] == (4, "")
-    assert steps["Scored 75+"] == (3, "75% of found")
-    # b is Rejected now, but it reached Interview, so it counts as applied and interviewed
-    assert steps["Applied"] == (2, "100% of shortlisted")
-    assert steps["Interview"] == (1, "50% of applied") and steps["Offer"] == (0, "0% of interview")
 
 
 def test_breakdown_and_skills(repo: Repo) -> None:
@@ -391,13 +337,14 @@ def test_buttons_need_the_page_token(client: TestClient, repo: Repo) -> None:
     add(repo, "j", company="Rubrik")
     token = repo.get_setting("web_token")
     assert token and f'content="{token}"' in client.get("/").text
-    assert client.post("/jobs/j/act", content="action=applied").status_code == 403
+    assert client.post("/jobs/j/act", content="action=shortlist").status_code == 403
     bad = {"x-jobradar-token": "guess", "content-type": "application/x-www-form-urlencoded"}
-    assert client.post("/jobs/j/act", content="action=applied", headers=bad).status_code == 403
+    assert client.post("/jobs/j/act", content="action=shortlist", headers=bad).status_code == 403
     other_site = {"x-jobradar-token": token, "origin": "https://evil.example",
                   "content-type": "application/x-www-form-urlencoded"}  # fmt: skip
     assert (
-        client.post("/jobs/j/act", content="action=applied", headers=other_site).status_code == 403
+        client.post("/jobs/j/act", content="action=shortlist", headers=other_site).status_code
+        == 403
     )
     job = repo.get_job("j")
     assert job is not None and job.status == "new"
@@ -407,15 +354,16 @@ def test_a_button_click(client: TestClient, repo: Repo) -> None:
     add(repo, "j", company="Rubrik")
     token = repo.get_setting("web_token") or ""
     headers = {"x-jobradar-token": token, "content-type": "application/x-www-form-urlencoded"}
-    out = client.post("/jobs/j/act", content="action=applied", headers=headers).json()
-    assert (out["ok"], out["status"], out["undo"]) == (True, "applied", "new")
-    assert 'data-id="j"' in out["row"] and "Interview" in out["row"]  # the row's next buttons
-    again = client.post("/jobs/j/act", content="action=skip", headers=headers)
-    assert again.status_code == 409 and "is Applied now" in again.json()["message"]
+    out = client.post("/jobs/j/act", content="action=shortlist", headers=headers).json()
+    assert (out["ok"], out["status"], out["undo"]) == (True, "shortlisted", "new")
+    assert 'data-id="j"' in out["row"] and "Not interested" in out["row"]  # the row's next buttons
+    again = client.post("/jobs/j/act", content="action=shortlist", headers=headers)
+    assert again.status_code == 409 and "is Shortlisted now" in again.json()["message"]
     undo = client.post("/jobs/j/status", content="status=new", headers=headers).json()
     assert undo["ok"] and undo["status"] == "new"
     assert (
-        client.post("/jobs/nope/act", content="action=applied", headers=headers).status_code == 404
+        client.post("/jobs/nope/act", content="action=shortlist", headers=headers).status_code
+        == 404
     )
 
 
@@ -434,24 +382,22 @@ def test_without_javascript_a_form_post_comes_back(client: TestClient, repo: Rep
 
 def test_cards_show_the_next_steps(repo: Repo, clock: FakeClock) -> None:
     add(repo, "n")
-    add(repo, "a", status=JobStatus.APPLIED, you=True)
-    add(repo, "i", status=JobStatus.INTERVIEW, you=True)
-    add(repo, "o", status=JobStatus.OFFER, you=True)
+    add(repo, "s", status=JobStatus.SHORTLISTED, you=True)
+    add(repo, "k", status=JobStatus.SKIPPED, you=True)
+    add(repo, "h", status=JobStatus.HIDDEN)
     acts = lambda job_id: [a for a, _ in views.card(repo.get_job(job_id), TZ).actions]  # type: ignore[arg-type]  # noqa: E731
-    assert acts("n") == ["applied", "shortlist", "skip"]
-    assert acts("a") == ["interview", "followed up", "rejected"]
-    assert acts("i") == ["offer", "rejected"] and acts("o") == []
+    assert acts("n") == ["shortlist", "skip"]
+    assert acts("s") == ["skip"] and acts("k") == ["shortlist"] and acts("h") == ["shortlist"]
 
 
-# ---- step 3: inside `jobradar run`, resumes, follow-up drafts ---------------------------------
+# ---- step 3: inside `jobradar run` --------------------------------------------------------------
 
 
-def with_storage(tmp_path: Any, **web: Any) -> Any:
+def with_web(**web: Any) -> Any:
     from jobradar.config import AppConfig, Settings
 
     base = settings()
     config = base.config.model_dump()
-    config["storage"]["local_dir"] = str(tmp_path / "output")
     config["web"].update(web)
     return Settings(config=AppConfig.model_validate(config), secrets=base.secrets)
 
@@ -471,7 +417,7 @@ async def test_the_dashboard_runs_inside_jobradar_run(
         port = s.getsockname()[1]
     before = signal.getsignal(signal.SIGINT)
     woke: list[int] = []
-    server = start_dashboard(with_storage(tmp_path, port=port), repo, queue,
+    server = start_dashboard(with_web(port=port), repo, queue,
                              lambda: woke.append(1))  # fmt: skip
     assert server is not None
     task = asyncio.create_task(server.serve())
@@ -485,81 +431,7 @@ async def test_the_dashboard_runs_inside_jobradar_run(
     assert signal.getsignal(signal.SIGINT) is before  # Ctrl+C stays JobRadar's
     server.should_exit = True
     await asyncio.wait_for(task, 5)
-    assert start_dashboard(with_storage(tmp_path, enabled=False), repo, queue, print) is None
-
-
-def test_resume_files_only_from_the_output_folder(
-    repo: Repo, tmp_path: Path, clock: FakeClock
-) -> None:
-    s = with_storage(tmp_path)
-    out = tmp_path / "output"
-    out.mkdir()
-    (out / "Acme_SWE_20261020_v1.pdf").write_bytes(b"%PDF-1.4 resume")
-    (out / "Acme_SWE_20261020_cover_letter.pdf").write_bytes(b"%PDF-1.4 letter")
-    (tmp_path / "secret.pdf").write_bytes(b"%PDF-1.4 not yours to serve")
-    add(repo, "j", company="Acme")
-    ats = {"ats": {"problems": [], "skills_on_resume": ["Python"], "skills_not_on_resume": ["SQL"]},
-           "tailored": True}  # fmt: skip
-    good = repo.save_artifact(
-        "j", "resume", 1, str(out / "Acme_SWE_20261020_v1.pdf"), json.dumps(ats)
-    )
-    evil = repo.save_artifact("j", "resume", 2, str(out / ".." / "secret.pdf"), "{}")
-    client = TestClient(create_app(s, repo, clock), base_url="http://127.0.0.1:8080")
-    pdf = client.get(f"/files/{good.id}")
-    assert pdf.status_code == 200 and pdf.content == b"%PDF-1.4 resume"
-    assert (
-        pdf.headers["content-type"] == "application/pdf"
-        and "inline" in pdf.headers["content-disposition"]
-    )
-    assert "content-security-policy" not in pdf.headers  # the browser's PDF viewer may show it
-    assert client.get(f"/files/{good.id}?cover=1").content == b"%PDF-1.4 letter"
-    assert client.get(f"/files/{evil.id}").status_code == 404  # outside storage.local_dir
-    assert client.get("/files/12345").status_code == 404
-    page = client.get("/jobs/j").text
-    assert f'href="/files/{good.id}"' in page and f'href="/files/{good.id}?cover=1"' in page
-    assert "✓ Python" in page and "Version 2" in page and "File not found" in page
-
-
-def test_build_resume_button(repo: Repo, tmp_path: Path, clock: FakeClock) -> None:
-    add(repo, "j")
-    client = TestClient(
-        create_app(with_storage(tmp_path), repo, clock), base_url="http://127.0.0.1:8080"
-    )
-    token = repo.get_setting("web_token") or ""
-    headers = {"x-jobradar-token": token, "content-type": "application/x-www-form-urlencoded"}
-    assert (
-        client.post(
-            "/jobs/j/resume", content="", headers={"content-type": headers["content-type"]}
-        ).status_code
-        == 403
-    )
-    out = client.post("/jobs/j/resume", content="", headers=headers).json()
-    assert out["ok"] and out["count"] == 0
-    assert client.get("/api/jobs/j/resumes").json() == {"count": 0, "building": True}
-    assert "Building…" in client.get("/jobs/j").text
-
-
-def test_follow_up_draft_on_an_applied_job(repo: Repo, tmp_path: Path, clock: FakeClock) -> None:
-    add(repo, "j", company="Rubrik", role="SDE", status=JobStatus.APPLIED, you=True)
-    add(repo, "n", company="Acme")
-    client = TestClient(
-        create_app(with_storage(tmp_path), repo, clock), base_url="http://127.0.0.1:8080"
-    )
-    page = client.get("/jobs/j").text
-    assert "Follow-up email" in page and "SDE role at Rubrik" in page and "mailto:" in page
-    assert "Follow-up email" not in client.get("/jobs/n").text
-
-
-def test_alert_emails_link_to_the_dashboard(repo: Repo, tmp_path: Path) -> None:
-    from jobradar.sinks.email_notify import build_email, dashboard_link
-
-    add(repo, "j", company="Rubrik")
-    job = repo.get_job("j")
-    assert job is not None
-    msg = build_email([job], "me@x.com", "me@x.com", dashboard=dashboard_link(settings()))
-    assert "http://127.0.0.1:8080/jobs/j" in str(msg.get_body(("plain",)).get_content())  # type: ignore[union-attr]
-    off = with_storage(tmp_path, enabled=False)
-    assert dashboard_link(off) is None
+    assert start_dashboard(with_web(enabled=False), repo, queue, print) is None
 
 
 # ---- full-text search and filters -----------------------------------------------------------

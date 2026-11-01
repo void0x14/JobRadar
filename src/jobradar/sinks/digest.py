@@ -96,7 +96,7 @@ class DigestData:
     failed: int = 0
     spent_inr: float = 0.0
     budget_inr: float = 0.0
-    pipeline: dict[str, int] = field(default_factory=dict)  # applied/interview/offer now
+    pipeline: dict[str, int] = field(default_factory=dict)  # shortlisted now
     moved: dict[str, int] = field(default_factory=dict)  # statuses you set in the window
     boards: list[tuple[Job, str]] = field(default_factory=list)  # (job, "Greenhouse · Stripe")
     skill_gaps: list[Gap] = field(default_factory=list)  # once a week: skills you keep missing
@@ -143,18 +143,17 @@ def gather(
     return data
 
 
-_PIPELINE = ("shortlisted", "applied", "interview", "offer")
+_PIPELINE = ("shortlisted",)
 
 
 def pipeline_line(data: DigestData) -> str | None:
-    """'Your applications: 15 applied · 3 interviews · 0 offers (+2 applied today)'."""
+    """'Your shortlist: 15 jobs (+2 since then)'."""
     if not any(data.pipeline.values()):
         return None
-    words = {"shortlisted": "shortlisted", "applied": "applied",
-             "interview": "interviews", "offer": "offers"}  # fmt: skip
+    words = {"shortlisted": "shortlisted"}
     line = " · ".join(f"{data.pipeline[s]} {words[s]}" for s in _PIPELINE)
     moved = [f"+{n} {s}" for s, n in data.moved.items() if s in _PIPELINE and n]
-    return f"Your applications: {line}" + (f" ({', '.join(moved)} since then)" if moved else "")
+    return f"Your shortlist: {line}" + (f" ({', '.join(moved)} since then)" if moved else "")
 
 
 def _title(job: Job) -> str:

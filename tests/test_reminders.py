@@ -52,7 +52,7 @@ async def test_reminds_once_about_shortlisted_jobs_closing_soon(
     add_job(repo, "tomorrow", JobStatus.SHORTLISTED, "2026-10-09")
     add_job(repo, "later", JobStatus.SHORTLISTED, "2026-10-12")
     add_job(repo, "inbox", JobStatus.NEW, "2026-10-08")  # not shortlisted: the digest covers it
-    add_job(repo, "applied", JobStatus.APPLIED, "2026-10-08")
+    add_job(repo, "skipped", JobStatus.SKIPPED, "2026-10-08")  # not shortlisted: no reminder
     r = make(repo, queue, clock, tmp_path)
 
     assert (await r.check_now()).startswith("sent:")

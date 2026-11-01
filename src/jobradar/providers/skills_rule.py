@@ -40,6 +40,46 @@ def skill_key(name: str) -> str:
     return _ALIASES.get(key, key)
 
 
+_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+#/-]*")
+
+# Technology names a job page may name: the ones the Skills page counts as skills.
+COMMON_TECH = {
+    "java", "go", "golang", "rust", "c++", "c#", "kotlin", "swift", "scala", "ruby", "php",
+    "perl", "dart", "flutter", "typescript", "javascript", "python", "sql", "nosql", "bash",
+    "aws", "azure", "gcp", "google cloud", "kubernetes", "k8s", "terraform", "ansible", "helm",
+    "kafka", "spark", "hadoop", "airflow", "flink", "rabbitmq", "celery", "temporal",
+    "django", "flask", "fastapi", "spring", "spring boot", "laravel", "rails", ".net", "asp.net",
+    "angular", "vue", "svelte", "react native", "next.js", "nestjs", "express", "graphql", "grpc",
+    "mysql", "postgresql", "sqlite", "mongodb", "dynamodb", "cassandra", "elasticsearch", "redis",
+    "snowflake", "bigquery", "docker", "jenkins", "github actions", "gitlab", "linux", "nginx",
+    "tensorflow", "pytorch", "keras", "scikit-learn", "pandas", "numpy", "opencv", "langchain",
+    "llm", "llms", "nlp", "computer vision", "deep learning", "machine learning", "generative ai",
+    "microservices", "serverless", "lambda", "s3", "ec2", "kinesis", "websockets", "oauth", "jwt",
+    "tableau", "power bi", "excel", "selenium", "playwright", "jest", "pytest", "junit",
+}  # fmt: skip
+
+
+def _ngrams(text: str, longest: int = 3) -> set[str]:
+    words = [w.strip(".,;:") for w in _TOKEN.findall(text.replace("**", ""))]
+    words = [w for w in words if w]
+    grams = set()
+    for n in range(1, longest + 1):
+        for i in range(len(words) - n + 1):
+            grams.add(" ".join(words[i : i + n]))
+    return grams
+
+
+def keys_in(text: str) -> set[str]:
+    """Skill keys of every 1-3 word run in the text ('REST APIs' -> 'restapi')."""
+    found = set()
+    for gram in _ngrams(text):
+        key = skill_key(gram)
+        found.add(key)
+        if "/" in gram:  # "Git/GitHub" mentions Git and GitHub
+            found |= {skill_key(p) for p in gram.split("/")}
+    return found - {""}
+
+
 def profile_skill_keys(profile: dict[str, Any]) -> set[str]:
     names = skill_names(profile)  # grouped ({languages: [...]}) or flat
     for project in profile.get("projects", []):

@@ -6,51 +6,38 @@ page's content is tested without a server. Times are shown in `notify.timezone`.
 
 from __future__ import annotations
 
-import json
 import re
 import zlib
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
-from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 from markupsafe import Markup, escape
 
-from jobradar.by_source import UNDO_MINUTES, Application, SourceRow, by_source
 from jobradar.clock import to_iso
 from jobradar.config import Settings
-from jobradar.db.models import Artifact, Job, JobStatus
+from jobradar.db.models import Job, JobStatus
 from jobradar.db.repo import Repo
 from jobradar.pipeline import status_rules as rules
 from jobradar.pipeline.schemas import JobPosting
 from jobradar.pipeline.skill_detail import Detail as Needs
 from jobradar.pipeline.skill_detail import detail, spelling
 from jobradar.pipeline.skill_gaps import Demand, Gap, demand, skill_gaps
-from jobradar.pipeline.task_types import BUILD_RESUME
 from jobradar.profile import skill_names, skill_warnings
 from jobradar.providers.base import MatchAnswers
 from jobradar.providers.skills_rule import compare_skills, skill_key
-from jobradar.queue.tasks import TaskQueue
 from jobradar.sinks.digest import gather, part_of_day, pipeline_line, previous_slot
-from jobradar.sinks.email_actions import REPLIED
 from jobradar.sinks.email_template import Reason, day_month, posting_of, split_reason
-from jobradar.sinks.followups import MAX_REMINDERS, Draft, FollowUpReminder
 from jobradar.sinks.notion import experience_text, message_link, source_label
-from jobradar.sinks.notion_sync import FOLLOWED_UP
 from jobradar.web import search as fts
 
 LABELS = {
     JobStatus.NEW: "New",
     JobStatus.SHORTLISTED: "Shortlisted",
-    JobStatus.RESUME_READY: "Resume ready",
-    JobStatus.APPLIED: "Applied",
-    JobStatus.INTERVIEW: "Interview",
-    JobStatus.OFFER: "Offer",
-    JobStatus.REJECTED: "Rejected",
     JobStatus.SKIPPED: "Skipped",
     JobStatus.HIDDEN: "Hidden",
     JobStatus.DISCARDED: "Not a job",
@@ -62,21 +49,9 @@ TODAY_DAYS = 3  # Today lists good matches first seen this recently
 FRESH_HOURS = 6  # a job first seen this recently is marked "new"
 PER_PAGE = 50
 
-# The Applications board: (column, the statuses in it).
-# The Applications board: (column, the status a card dropped there gets, the statuses in it).
-COLUMNS: list[tuple[str, JobStatus, list[JobStatus]]] = [
-    ("Shortlisted", JobStatus.SHORTLISTED, [JobStatus.SHORTLISTED, JobStatus.RESUME_READY]),
-    ("Applied", JobStatus.APPLIED, [JobStatus.APPLIED]),
-    ("Interview", JobStatus.INTERVIEW, [JobStatus.INTERVIEW]),
-    ("Offer", JobStatus.OFFER, [JobStatus.OFFER]),
-    ("Rejected", JobStatus.REJECTED, [JobStatus.REJECTED]),
-]
-
 # All jobs: the "Show" choices. "jobs" leaves out what JobRadar hid or found wasn't a job.
 SHOW_JOBS = [
-    JobStatus.NEW, JobStatus.NEEDS_REVIEW, JobStatus.SHORTLISTED, JobStatus.RESUME_READY,
-    JobStatus.APPLIED, JobStatus.INTERVIEW, JobStatus.OFFER, JobStatus.REJECTED,
-    JobStatus.SKIPPED,
+    JobStatus.NEW, JobStatus.NEEDS_REVIEW, JobStatus.SHORTLISTED, JobStatus.SKIPPED,
 ]  # fmt: skip
 SHOW_CHOICES: list[tuple[str, str]] = [
     ("jobs", "Jobs (not hidden)"),
@@ -203,20 +178,15 @@ QUICK_FILTERS = [
 
 
 BUTTON_LABELS = {
-    "applied": "I applied", "shortlist": "Shortlist", "skip": "Not interested",
-    "interview": "Interview", "followed up": "I followed up", "offer": "Offer",
-    "rejected": "Rejected",
+    "shortlist": "Shortlist", "skip": "Not interested",
 }  # fmt: skip
 # The buttons each status shows, most likely first. (The rules allow a little more, e.g.
-# Interview straight from New; that's in Change status.)
+# Shortlist straight from Skipped; that's in Change status.)
 _BUTTONS: dict[str, list[str]] = {
-    JobStatus.NEW.value: ["applied", "shortlist", "skip"],
-    JobStatus.HIDDEN.value: ["shortlist", "applied"],
-    JobStatus.SHORTLISTED.value: ["applied", "skip"],
-    JobStatus.RESUME_READY.value: ["applied", "skip"],
-    JobStatus.SKIPPED.value: ["shortlist", "applied"],
-    JobStatus.APPLIED.value: ["interview", "followed up", "rejected"],
-    JobStatus.INTERVIEW.value: ["offer", "rejected"],
+    JobStatus.NEW.value: ["shortlist", "skip"],
+    JobStatus.HIDDEN.value: ["shortlist"],
+    JobStatus.SHORTLISTED.value: ["skip"],
+    JobStatus.SKIPPED.value: ["shortlist"],
 }
 
 
@@ -269,99 +239,6 @@ def today(repo: Repo, min_score: int, now: datetime, tz: ZoneInfo) -> list[Card]
     """Good matches you haven't acted on, first seen in the last few days, best first."""
     since = to_iso(now - timedelta(days=TODAY_DAYS))
     return [card(j, tz, now) for j in repo.good_new_jobs(min_score, since)]
-
-
-# ---- Applications ----------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class Track:
-    """Where an application stands, beyond its status."""
-
-    resume: bool  # a resume was built for it
-    replied: str | None  # the company wrote back: "interview", "test", "rejected"
-    followed_up: str  # the day you last followed up, "21 Oct", or ""
-    next_nudge: str  # when JobRadar will draft a follow-up, "29 Oct", or ""
-    nudge_in: int | None  # days until then (0: due now)
-    waited: int  # % of the wait to the next follow-up, for the meter
-    reminders: int  # follow-up drafts sent so far
-
-
-@dataclass(frozen=True)
-class BoardCard:
-    card: Card
-    track: Track
-
-
-@dataclass(frozen=True)
-class Column:
-    key: str  # the status a card dropped here gets
-    title: str
-    cards: list[BoardCard]
-    note: str  # one line under the title: "2 due for a follow-up"
-
-
-REPLY_WORDS = {"interview": "Interview invite", "test": "Online test", "rejected": "Rejection"}
-
-
-def track(repo: Repo, job: Job, tz: ZoneInfo, now: datetime, nudges: FollowUpReminder) -> Track:
-    raw = repo.get_setting(REPLIED + job.id)
-    replied = None
-    if raw:
-        try:
-            replied = str(json.loads(raw).get("kind") or "") or None
-        except ValueError:
-            replied = None
-    followed = repo.get_setting(FOLLOWED_UP + job.id) or ""
-    next_nudge, nudge_in, waited, reminders = "", None, 0, 0
-    if job.status == JobStatus.APPLIED.value and job.user_status_at and replied is None:
-        _, since, reminders = nudges.status(job)
-        if reminders < MAX_REMINDERS:
-            due = since + nudges.after
-            nudge_in = max((due.astimezone(tz).date() - now.astimezone(tz).date()).days, 0)
-            next_nudge = f"{due.astimezone(tz).day} {due.astimezone(tz):%b}"
-            total = nudges.after.total_seconds()
-            waited = min(100, max(0, round(100 * (now - since).total_seconds() / total)))
-    return Track(
-        resume=repo.latest_artifact(job.id) is not None,
-        replied=replied,
-        followed_up=day_month(followed) if followed else "",
-        next_nudge=next_nudge,
-        nudge_in=nudge_in,
-        waited=waited,
-        reminders=reminders,
-    )
-
-
-def _note(key: JobStatus, cards: list[BoardCard]) -> str:
-    if not cards:
-        return ""
-    if key == JobStatus.SHORTLISTED:
-        ready = sum(1 for c in cards if c.track.resume)
-        return f"{ready} with a resume ready" if ready else "No resumes built yet"
-    if key == JobStatus.APPLIED:
-        due = sum(1 for c in cards if c.track.nudge_in == 0)
-        replied = sum(1 for c in cards if c.track.replied)
-        bits = [f"{due} due for a follow-up"] if due else []
-        bits += [f"{replied} replied"] if replied else []
-        days = [c.card.days for c in cards if c.card.days is not None]
-        if days and (average := round(sum(days) / len(days))) >= 1:
-            bits.append(f"waiting {average} day{'s' if average > 1 else ''} on average")
-        return " · ".join(bits)
-    if key == JobStatus.INTERVIEW:
-        return "Prepare, then set Offer or Rejected"
-    return ""
-
-
-def board(repo: Repo, settings: Settings, now: datetime) -> list[Column]:
-    tz = settings.config.notify.tz
-    nudges = FollowUpReminder(settings, repo, TaskQueue(repo))
-    columns = []
-    for title, key, statuses in COLUMNS:
-        cards = [BoardCard(card(j, tz, now), track(repo, j, tz, now, nudges))
-                 for j in repo.jobs_in(statuses)]  # fmt: skip
-        columns.append(Column(key.value, title, cards, _note(key, cards)))
-    return columns
 
 
 # ---- All jobs --------------------------------------------------------------------------------
@@ -468,21 +345,6 @@ class Seen:
 
 
 @dataclass(frozen=True)
-class File:
-    id: int | None
-    name: str
-    kind: str
-    at: str
-    version: int = 1
-    url: str | None = None  # opens the PDF, when it's there
-    cover_url: str | None = None  # the cover letter written next to it, when there is one
-    tailored: bool = False
-    problems: list[str] = field(default_factory=list)  # the resume check's findings
-    skills_on: list[str] = field(default_factory=list)  # the job's skills on the page
-    skills_off: list[str] = field(default_factory=list)  # the job's skills you have, not on it
-
-
-@dataclass
 class Detail:
     card: Card
     take: str  # Blip's one-line reading of the score
@@ -496,9 +358,6 @@ class Detail:
     summary: str = ""
     seen_in: list[Seen] = field(default_factory=list)
     history: list[tuple[str, str]] = field(default_factory=list)
-    files: list[File] = field(default_factory=list)
-    building: bool = False  # a resume is queued or being built
-    draft: Draft | None = None  # the follow-up JobRadar would send (Applied jobs)
     page_text: str | None = None
 
 
@@ -525,54 +384,6 @@ def _facts(job: Job, posting: JobPosting | None) -> list[tuple[str, str]]:
     if posting.published_on:
         facts.append(("Posted", day_month(posting.published_on.isoformat())))
     return facts
-
-
-_VERSION = re.compile(r"_v\d+\.pdf$")
-
-
-def artifact_file(
-    settings: Settings | None, artifact: Artifact, cover: bool = False
-) -> Path | None:
-    """The PDF for this resume, or the cover letter beside it ({…}_cover_letter.pdf), if it's
-    a file inside storage.local_dir. Never a path from anywhere else."""
-    if not artifact.local_path:
-        return None
-    base = (settings.config.storage.local_dir if settings else Path("output")).resolve()
-    path = Path(artifact.local_path)
-    path = (path if path.is_absolute() else Path.cwd() / path).resolve()
-    if cover:
-        if not _VERSION.search(path.name):
-            return None
-        path = path.with_name(_VERSION.sub("_cover_letter.pdf", path.name))
-    if path.suffix.lower() != ".pdf" or not path.is_relative_to(base) or not path.is_file():
-        return None
-    return path
-
-
-def _file(artifact: Artifact, tz: ZoneInfo, settings: Settings | None = None) -> File:
-    path = artifact.local_path
-    name = Path(path).name if path else f"{artifact.kind} v{artifact.version}"
-    record: dict[str, Any] = {}
-    try:
-        record = json.loads(artifact.content_json or "{}")
-    except ValueError:
-        record = {}
-    ats_report = record.get("ats") or {}
-    has_file = artifact_file(settings, artifact) is not None
-    has_cover = artifact_file(settings, artifact, cover=True) is not None
-    return File(
-        id=artifact.id,
-        name=name,
-        kind=artifact.kind.replace("_", " "),
-        at=when(artifact.created_at, tz),
-        version=artifact.version,
-        url=f"/files/{artifact.id}" if has_file else None,
-        cover_url=f"/files/{artifact.id}?cover=1" if has_cover else None,
-        tailored=bool(record.get("tailored")),
-        problems=[str(p) for p in ats_report.get("problems") or []],
-        skills_on=[str(k) for k in ats_report.get("skills_on_resume") or []],
-        skills_off=[str(k) for k in ats_report.get("skills_not_on_resume") or []],
-    )
 
 
 @dataclass(frozen=True)
@@ -642,14 +453,10 @@ def job_detail(
     now: datetime,
     weights: dict[str, float] | None = None,
     profile: dict[str, Any] | None = None,
-    settings: Settings | None = None,
 ) -> Detail | None:
     job = repo.get_job(job_id)
     if job is None:
         return None
-    draft = None
-    if settings is not None and job.status == JobStatus.APPLIED.value:
-        draft = FollowUpReminder(settings, repo, TaskQueue(repo)).draft_for(job)
     posting = posting_of(job)
     page = repo.get_page(job.id)
     apply_url = posting.apply_url if posting else None
@@ -669,9 +476,6 @@ def job_detail(
             for s in repo.job_sightings(job.id)
         ],
         history=[(label(st), when(at, tz)) for st, at in repo.status_history(job.id)],
-        files=[_file(a, tz, settings) for a in repo.artifacts_of(job.id)],
-        building=repo.task_waiting(BUILD_RESUME, job.id),
-        draft=draft,
         page_text=page.text if page and page.text else None,
     )
 
@@ -686,10 +490,8 @@ class Overview:
     """The numbers in the sidebar and on Today, and what Blip is up to."""
 
     today: int  # good matches you haven't acted on
-    active: int  # on the Applications board, still open
+    active: int  # jobs you shortlisted
     jobs: int  # All jobs (not hidden)
-    applied: int
-    interviews: int
     closing: int  # jobs you may still apply to, closing in the next 2 days
     awake: bool
     last_read: str  # "3 min ago", or ""
@@ -709,12 +511,8 @@ def overview(repo: Repo, min_score: int, now: datetime, tz: ZoneInfo, name: str)
     awake = bool(last) and (now - _at(last or "")) < timedelta(minutes=AWAKE_MINUTES)
     return Overview(
         today=len(repo.good_new_jobs(min_score, since)),
-        active=n(
-            JobStatus.SHORTLISTED, JobStatus.RESUME_READY, JobStatus.APPLIED, JobStatus.INTERVIEW
-        ),
+        active=n(JobStatus.SHORTLISTED),
         jobs=n(*SHOW_JOBS),
-        applied=n(JobStatus.APPLIED, JobStatus.INTERVIEW, JobStatus.OFFER, JobStatus.REJECTED),
-        interviews=n(JobStatus.INTERVIEW, JobStatus.OFFER),
         closing=len(closing),
         awake=awake,
         last_read=ago(last, now),
@@ -830,64 +628,6 @@ def sources(repo: Repo, min_score: int, now: datetime, top: int = 5) -> list[Sou
     ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:top]
     peak = max([1, *(n for _, n in ranked)])
     return [Source(name, n, round(100 * n / peak)) for name, n in ranked]
-
-
-@dataclass(frozen=True)
-class Step:
-    name: str
-    jobs: int
-    width: int  # % of the first step, for the bar
-    rate: str  # "12% of the step before", or ""
-
-
-def funnel(repo: Repo, min_score: int) -> list[Step]:
-    """From every job found to offers: how far your applications get."""
-    counts = repo.status_counts()
-    found = sum(n for st, n in counts.items() if st != JobStatus.DISCARDED.value)
-    with_good = repo.search_good_count(min_score)
-    after_shortlist = [JobStatus.SHORTLISTED, JobStatus.RESUME_READY, JobStatus.APPLIED,
-                       JobStatus.INTERVIEW, JobStatus.OFFER]  # fmt: skip
-    steps = [
-        ("Found", found),
-        (f"Scored {min_score}+", with_good),
-        ("Shortlisted", repo.jobs_ever_in(after_shortlist, UNDO_MINUTES)),
-        ("Applied", repo.jobs_ever_in(after_shortlist[2:], UNDO_MINUTES)),
-        ("Interview", repo.jobs_ever_in([JobStatus.INTERVIEW, JobStatus.OFFER], UNDO_MINUTES)),
-        ("Offer", repo.jobs_ever_in([JobStatus.OFFER], UNDO_MINUTES)),
-    ]
-    top = max(steps[0][1], 1)
-    out: list[Step] = []
-    for i, (name, n) in enumerate(steps):
-        before = steps[i - 1][1] if i else 0
-        rate = f"{round(100 * n / before)}% of {steps[i - 1][0].lower()}" if i and before else ""
-        out.append(Step(name, n, max(round(100 * n / top), 1 if n else 0), rate))
-    return out
-
-
-@dataclass(frozen=True)
-class SourceStrip:
-    """Interviews by source, above the Applications board."""
-
-    summary: str
-    rows: list[tuple[SourceRow, list[tuple[Card, Application]]]]  # each row with its jobs
-
-
-def source_strip(repo: Repo, tz: ZoneInfo) -> SourceStrip | None:
-    """None until you've applied to something."""
-    report = by_source(repo)
-    if not report.rows:
-        return None
-    cards: dict[str, Card] = {}
-    rows = []
-    for row in report.rows:
-        jobs = []
-        for a in row.jobs:
-            if a.job_id not in cards and (job := repo.get_job(a.job_id)):
-                cards[a.job_id] = card(job, tz)
-            if a.job_id in cards:
-                jobs.append((cards[a.job_id], a))
-        rows.append((row, jobs))
-    return SourceStrip(report.summary, rows)
 
 
 # ---- the command palette (Ctrl+K) -------------------------------------------------------------
@@ -1111,7 +851,7 @@ def skills_page(
     repo: Repo, settings: Settings, profile: dict[str, Any] | None, now: datetime, days: int
 ) -> SkillsPage:
     """The skills your good matches ask for: the ones your profile lacks (what to learn, or
-    to add if you know them) and the ones it has (what to put first on a resume). A missing
+    to add if you know them) and the ones it has (what to lead with). A missing
     skill counts only the jobs that need it: "Python, Java or C++" doesn't count for C++."""
     days = days if days in dict(SKILL_WINDOWS) else 30
     min_score = settings.config.scoring.alert_above

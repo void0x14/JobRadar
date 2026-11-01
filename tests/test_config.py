@@ -16,7 +16,7 @@ def write(tmp_path: Path, text: str, name: str = "config.yaml") -> Path:
 
 def test_example_config_loads() -> None:
     cfg = load_config(ROOT / "config.example.yaml")
-    assert cfg.scoring.auto_resume_above == 85
+    assert cfg.scoring.alert_above == 75
     assert cfg.llm.providers == {"gemini"}
     assert cfg.notify.tz.key == "Asia/Kolkata"
     assert cfg.sources.email_forward.folder == "JobRadar"

@@ -3,12 +3,8 @@
 Every `POLL_SECONDS` a `notion_poll` task asks Notion for pages edited since the last poll
 (minus a minute of overlap) and compares each page's Status with what JobRadar itself would
 show. A difference is yours: the job takes that status for good, the change is written to
-`status_change` (your application funnel), and JobRadar never hides, re-decides or alerts on
-that job again. JobRadar's own edits (score, details) also touch pages, which is why only a
-*different* Status counts.
-
-The same read picks up the Followed Up date you set after sending a follow-up; it's kept as
-a setting per job (`followed_up:<job id>`) for the follow-up reminders.
+`status_change`, and JobRadar never hides, re-decides or alerts on that job again. JobRadar's
+own edits (score, details) also touch pages, which is why only a *different* Status counts.
 """
 
 from __future__ import annotations
@@ -20,7 +16,7 @@ from typing import Any
 from jobradar.clock import Clock, to_iso, utcnow
 from jobradar.db.models import JobStatus
 from jobradar.db.repo import Repo, TaskRecord
-from jobradar.pipeline.task_types import BUILD_RESUME, NOTION_POLL
+from jobradar.pipeline.task_types import NOTION_POLL
 from jobradar.queue.tasks import TaskQueue
 from jobradar.sinks.notion import STATUS_OPTION, NotionClient
 
@@ -29,17 +25,17 @@ log = logging.getLogger(__name__)
 POLL_SECONDS = 120
 OVERLAP = timedelta(minutes=1)
 CURSOR_KEY = "notion_poll_since"
-FOLLOWED_UP = "followed_up:"  # setting key prefix, per job: the date you set in Notion
 FIRST_SINCE = "2000-01-01T00:00:00.000000Z"  # the first poll reads every page once
 
 # Notion Status option -> JobRadar status. Case doesn't matter.
 FROM_NOTION: dict[str, JobStatus] = {
     "new": JobStatus.NEW,
     "shortlisted": JobStatus.SHORTLISTED,
-    "applied": JobStatus.APPLIED,
-    "interview": JobStatus.INTERVIEW,
-    "offer": JobStatus.OFFER,
-    "rejected": JobStatus.REJECTED,
+    # The application stages an older database may still use: you went for the job.
+    "applied": JobStatus.SHORTLISTED,
+    "interview": JobStatus.SHORTLISTED,
+    "offer": JobStatus.SHORTLISTED,
+    "rejected": JobStatus.SKIPPED,
     "skipped": JobStatus.SKIPPED,
     "hidden": JobStatus.HIDDEN,
 }
@@ -62,13 +58,6 @@ def page_status(page: dict[str, Any]) -> tuple[str, str | None]:
     return _plain(props.get("Job ID")), (str(name) if name else None)
 
 
-def page_followed_up(page: dict[str, Any]) -> str | None:
-    """The Followed Up date on a page ('2026-10-19'), or None."""
-    prop = (page.get("properties") or {}).get("Followed Up") or {}
-    start = (prop.get("date") or {}).get("start") if prop.get("type", "date") == "date" else None
-    return str(start)[:10] if start else None
-
-
 def shown_by_jobradar(status: str) -> str | None:
     """The Status option JobRadar itself writes for one of its own statuses."""
     try:
@@ -85,7 +74,6 @@ class StatusSync:
         client: NotionClient,
         data_source_id: str,
         clock: Clock = utcnow,
-        build_resumes: bool = False,
     ) -> None:
         self.repo = repo
         self.queue = queue
@@ -93,7 +81,6 @@ class StatusSync:
         self.data_source_id = data_source_id
         self.clock = clock
         self._unknown: set[str] = set()
-        self.build_resumes = build_resumes  # Shortlisted without a resume: build one
 
     def schedule(self, delay: float = 0, key: str = "a") -> None:
         self.queue.enqueue(NOTION_POLL, key, delay=delay)
@@ -112,23 +99,11 @@ class StatusSync:
         since = self.repo.get_setting(CURSOR_KEY) or FIRST_SINCE
         pages = await self.client.changed_pages(self.data_source_id, since)
         changed = sum(self._apply(page) for page in pages)
-        for page in pages:
-            self._note_follow_up(page)
         # Notion timestamps are minute-rounded and edits can land mid-poll: overlap a bit.
         self.repo.set_setting(CURSOR_KEY, to_iso(started - OVERLAP))
         if changed:
             log.info("statuses from Notion", extra={"changed": changed, "pages": len(pages)})
         return changed
-
-    def _note_follow_up(self, page: dict[str, Any]) -> None:
-        job_id, _ = page_status(page)
-        if not job_id or self.repo.get_job(job_id) is None:
-            return
-        day = page_followed_up(page) or ""
-        if (self.repo.get_setting(FOLLOWED_UP + job_id) or "") != day:
-            self.repo.set_setting(FOLLOWED_UP + job_id, day)
-            if day:
-                log.info("you followed up", extra={"job_id": job_id[:10], "on": day})
 
     def _apply(self, page: dict[str, Any]) -> bool:
         job_id, option = page_status(page)
@@ -149,11 +124,5 @@ class StatusSync:
             return False
         if self.repo.set_user_status(job_id, status):
             log.info("your status", extra={"job_id": job_id[:10], "status": status.value})
-            if (
-                self.build_resumes
-                and status == JobStatus.SHORTLISTED
-                and self.repo.latest_artifact(job_id) is None
-            ):
-                self.queue.enqueue(BUILD_RESUME, job_id, {"why": "shortlisted"})
             return True
         return False

@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -40,11 +39,9 @@ SCHEMA: dict[str, str] = {
     "Skills": "multi_select",
     "Salary": "rich_text",
     "Apply Link": "url",
-    "Resume": "url",
     "Seen In": "number",
     "Scam Risk": "select",
     "Job ID": "rich_text",
-    "Cover Letter": "checkbox",
     "Notes": "rich_text",
     "Added": "created_time",
 }
@@ -55,11 +52,9 @@ ADDED_LATER: dict[str, str] = {
     "Source": "multi_select",
     # When the company's own site says it published the job (page data or its job board).
     "Posted On": "date",
-    # Yours: the day you sent a follow-up. JobRadar only reads it (follow-up reminders).
-    "Followed Up": "date",
 }
 # Added columns that only you fill in: nothing to write on old pages when they're added.
-USER_COLUMNS = {"Followed Up"}
+USER_COLUMNS: set[str] = set()
 
 # Agent-side status -> Notion Status option. Written only when the page is created; after
 # that the Status column belongs to the user.
@@ -362,7 +357,6 @@ def build_properties(
     *,
     new_page: bool,
     source: bool = False,
-    resume: str | None = None,
     posted_on: bool = False,
 ) -> dict[str, Any]:
     props: dict[str, Any] = {
@@ -404,8 +398,6 @@ def build_properties(
         apply = p.apply_url or apply
     if apply and len(apply) <= TEXT_LIMIT:
         props["Apply Link"] = {"url": apply}
-    if resume:
-        props["Resume"] = {"url": resume}
     # Status belongs to the user once the page exists; the one exception is the agent
     # hiding a job (a promo link, or the extractor finding it is not a job posting).
     if new_page or job.status in _AGENT_HIDES:
@@ -484,14 +476,6 @@ def _block(kind: str, rich_text: list[dict[str, Any]]) -> dict[str, Any]:
     return {"object": "block", "type": kind, kind: {"rich_text": rich_text}}
 
 
-def resume_link(repo: Repo, job_id: str) -> str | None:
-    """file:// link to the newest resume PDF (it opens on this computer only)."""
-    artifact = repo.latest_artifact(job_id)
-    if artifact is None or not artifact.local_path:
-        return None
-    return Path(artifact.local_path).resolve().as_uri()
-
-
 class NotionSink:
     name = "notion"
 
@@ -517,7 +501,6 @@ class NotionSink:
         if job.status in _AGENT_HIDES and not job.notion_page_id:
             return  # hidden before it ever reached Notion: keep it out
         sightings = repo.job_sightings(job_id)
-        resume = resume_link(repo, job_id)
         page_id = job.notion_page_id or await self.client.find_page(self.data_source_id, job_id)
         if page_id:
             props = build_properties(
@@ -525,7 +508,6 @@ class NotionSink:
                 sightings,
                 new_page=False,
                 source="Source" in self.extra,
-                resume=resume,
                 posted_on="Posted On" in self.extra,
             )
             try:
@@ -548,7 +530,6 @@ class NotionSink:
                     sightings,
                     new_page=True,
                     source="Source" in self.extra,
-                    resume=resume,
                     posted_on="Posted On" in self.extra,
                 ),
                 build_body(sightings, posting_of(job), match_line(job)),
@@ -582,10 +563,8 @@ class NotionSink:
 
         return notion_body
 
-    async def set_by_you(
-        self, repo: Repo, job_id: str, status: str | None, followed_up: str | None
-    ) -> None:
-        """Write a Status or Followed Up date you chose by email (the email buttons)."""
+    async def set_by_you(self, repo: Repo, job_id: str, status: str | None) -> None:
+        """Write the Status you chose by email (the email buttons)."""
         job = repo.get_job(job_id)
         if job is None:
             return
@@ -600,8 +579,6 @@ class NotionSink:
         props: dict[str, Any] = {}
         if status:
             props["Status"] = {"select": {"name": status}}
-        if followed_up and "Followed Up" in self.extra:
-            props["Followed Up"] = {"date": {"start": followed_up}}
         if props:
             await self.client.update_page(page_id, props)
             log.info("notion status set from your email", extra={"job_id": job_id[:10]})
@@ -609,8 +586,7 @@ class NotionSink:
     def status_handler(self, repo: Repo) -> Any:
         async def notion_status(task: TaskRecord) -> None:
             try:
-                await self.set_by_you(repo, task.key, task.payload.get("status"),
-                                      task.payload.get("followed_up"))  # fmt: skip
+                await self.set_by_you(repo, task.key, task.payload.get("status"))
             except PageGone:
                 repo.set_notion_page(task.key, None)
 

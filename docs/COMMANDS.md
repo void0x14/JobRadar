@@ -83,10 +83,7 @@ On every start, JobRadar catches up on Telegram posts it missed, re-scores open 
 | `jobradar alerts --test` | Send yourself a test alert email (works even in dry run) |
 | `jobradar digest --now` | Send the morning/evening digest for the current window right away |
 | `jobradar skills` | Skills your good matches named in the last 7 days that your profile doesn't list (`--days 30` for longer) |
-| `jobradar sources` | Each chat, board or page you applied from, and how many of those applications reached the next round |
-| `jobradar replies --check` | Read the inbox now for "I applied" / "Not interested" / "I followed up" button emails and update the jobs |
-| `jobradar followups` | Jobs you set to Applied: days without a reply and when a follow-up draft is due (`--now` emails the due ones) |
-| `jobradar resume <job_id>` | *Not built yet (v0.3)*: rebuild a tailored resume |
+| `jobradar replies --check` | Read the inbox now for "Shortlist" / "Not interested" button emails and update the jobs |
 | `jobradar doctor` | *Not built yet*: check keys, tools and access |
 
 Prefix each with `uv run`, e.g. `uv run jobradar stats --days 3`.
@@ -110,18 +107,6 @@ uv run jobradar extract --compare --examples 5
 ```
 Re-reads jobs Gemini read earlier with the free layers and prints, per field, how many were found and how often they agree. `--examples 5` shows up to 5 disagreements per field. Add `--refetch` to download the pages again first (slow: one request per second per site, with no progress output).
 
-### `jobradar resume`
-
-```bash
-uv run jobradar resume
-```
-Builds your profile as written into `output/profile_preview.pdf` (and `.tex`), to check the layout, and reads its text the way hiring software does: "✓ reads cleanly as text", or what's wrong (email or phone missing as text, dates with a long dash, words run together). Needs a LaTeX engine: Tectonic, or `sudo apt install texlive-latex-extra`.
-
-```bash
-uv run jobradar resume a7321a04
-```
-Builds a tailored resume for that job (the first 8 characters of its Job ID in Notion) as a new version, e.g. `output/Salesforce_SoftwareEngineeringMTS_20261014_v1.pdf` with its `.tex`. Prints anything the checker undid ("kept your wording: …"), the same text check, and how many of the job's skills that you have are on the page. `--plain` skips tailoring; `--template path/to/your.tex.j2` uses another layout. JobRadar also builds one by itself when a job first scores 85+ (`scoring.auto_resume_above`, at most `resume.max_per_day`) and when you set a job to Shortlisted.
-
 ### `jobradar stats`
 
 ```bash
@@ -143,13 +128,6 @@ uv run jobradar skills
 ```
 Counts, across your good matches (score at or above `scoring.alert_above`) from the last 7 days, the technologies they name that your profile doesn't list: "AWS 7, Google Cloud 6, Kubernetes 5…", each counted once per job and shown when two or more jobs name it. A job's skills are its stated skill list plus known technology names in its page and post; words that are also plain English (Go, Spring, Express) count only from stated lists. The first digest of each week shows the same list (`notify.skill_gaps: false` turns that off). If you already know one, add it to `skills:` in profile.yaml so matching counts it. It also warns if a skill in profile.yaml was cut in two at a comma inside brackets.
 
-### `jobradar sources`
-
-```bash
-uv run jobradar sources
-```
-One line per Telegram chat, company board or page you applied from: a mark per application (● reached Interview or Offer, ○ no reply yet, x rejected) and "1 of 4". Only sources with at least one application are listed. A job carried by two sources counts once in each and once in the total, and a repost doesn't count twice. A status you changed again within 10 minutes is taken as a misclick and ignored. The Applications page shows the same list above the board.
-
 ### `jobradar web`
 
 ```bash
@@ -163,26 +141,18 @@ uv run jobradar web
 `jobradar run` starts the dashboard too and prints its address (normally http://127.0.0.1:8080); `jobradar web` opens it on its own, when the agent is off. It reads JobRadar's own database either way; changes you make wait in the queue until `jobradar run` is running. Pages:
 
 - **Today**: good matches (score at or above `scoring.alert_above`) from the last 3 days that you haven't acted on, best first.
-- **Applications**: a board of every job you moved past New: Shortlisted (and Resume ready), Applied, Interview, Offer or rejected.
 - **All jobs**: search everything about a job (its page, the posts about it, skills, places: "kafka" finds every job that mentions Kafka, with the words highlighted), filter by status, score, how recently it was first seen, place, remote or hybrid, and where it came from, and sort by newest, oldest, score or relevance.
 - **Skills**: the skills your good matches ask for that your profile doesn't list, and the ones it does, over 7, 30 or 90 days, each with the jobs that asked; **What exactly do they want?** opens a skill's own page (which jobs must have it, which take it as one of a few like "AWS, Azure or GCP", which call it a plus, which take a skill you already have instead, and the services or topics they name with it). **I know …** adds a skill to `profile.yaml` (to the one-line `additional: [...]` list under `skills:`, with a backup next to it) so matching counts it after the next restart.
-- **A job's page**: **Resume for this job** (every version: open the PDF, the cover letter written next to it, and the resume check: contact details, dates, headings, and which of the job's skills are on it), **Build resume** / **Build a new version** (the page updates when it's ready), the **follow-up email** for an Applied job (the same draft the reminder sends, with Copy and Open in mail), why it scored what it did, the job's details, where it was posted, your status history, the resumes and letters built for it, and the page text JobRadar read.
+- **A job's page**: why it scored what it did, the job's details, the skills it asks for and which of them you have, where it was posted, your status history, and the page text JobRadar read.
 
-Change a status right on the page: **I applied**, **Shortlist** and **Not interested** on new jobs; **Interview**, **I followed up**, **Rejected** and **Offer** on applications (each button only moves a job forward, like the email buttons); and **Change status** on a job's page for any status, to fix a mistake. A toast offers **Undo**. Notion follows within a minute while `jobradar run` is running (the change waits in the queue until then), unless `notion.enabled: false`. Shortlisting a job with no resume queues one, as in Notion. Only this computer can open it (`web.host: 127.0.0.1`); to open it on your phone, share it over Tailscale and set `web.url` ([PHONE.md](PHONE.md)). If port 8080 is taken, it uses the next free one up to 8089 and says which; `web.port` sets another.
+Change a status right on the page: **Shortlist** and **Not interested** on new jobs (each button only moves a job forward, like the email buttons); and **Change status** on a job's page for any status, to fix a mistake. A toast offers **Undo**. Notion follows within a minute while `jobradar run` is running (the change waits in the queue until then), unless `notion.enabled: false`. Only this computer can open it (`web.host: 127.0.0.1`); to open it on your phone, share it over Tailscale and set `web.url` ([PHONE.md](PHONE.md)). If port 8080 is taken, it uses the next free one up to 8089 and says which; `web.port` sets another.
 
 ### `jobradar replies --check`
 
 ```bash
 uv run jobradar replies --check
 ```
-Every job card in alerts, digests and reminders has **I applied** and **Not interested** buttons; follow-up emails have **Send to recruiter** and **I followed up**. A button opens a ready email to yourself: press Send and, while `jobradar run` is running, JobRadar reads it from your inbox within 2 minutes (IMAP, with the same `EMAIL_ADDRESS` and app password that send alerts), sets the job to Applied or Skipped (or its Followed Up date) in Notion, and archives that email. Only emails from a button JobRadar sent you count: each carries a signature only your JobRadar can make. The same check reads new mail from companies you set to Applied or Interview (and only theirs): an interview invite, online test or rejection gets you an email like "Rubrik replied: interview invite?" with a **Yes, set Interview** button; nothing changes until you tap it (`notify.company_replies: false` turns this off). `--check` reads the inbox once now. Gmail needs IMAP on (Settings, Forwarding and POP/IMAP); it usually is. Turn the buttons off with `notify.email_actions: false`.
-
-### `jobradar followups`
-
-```bash
-uv run jobradar followups
-```
-Lists each job whose Status you set to Applied in Notion, the day you applied and when its follow-up draft is due ("next draft 29 Oct", "due now", "done: 2 follow-ups sent"). While `jobradar run` is running, JobRadar emails you a short follow-up draft 10 days after Applied with no reply (`notify.followup_after_days`), at most twice per job, between 08:00 and 22:00. The draft uses only your role, company, applied date and skills already on your resume. JobRadar never sends it: you send it to the recruiter, then set the **Followed Up** date in Notion, which restarts the 10 days. Setting Interview, Rejected or any other Status stops the reminders. `--now` emails the ones that are due right away.
+Every job card in alerts, digests and reminders has **Shortlist** and **Not interested** buttons. A button opens a ready email to yourself: press Send and, while `jobradar run` is running, JobRadar reads it from your inbox within 2 minutes (IMAP, with the same `EMAIL_ADDRESS` and app password that send alerts), sets the job to Shortlisted or Skipped in Notion, and archives that email. Only emails from a button JobRadar sent you count: each carries a signature only your JobRadar can make. `--check` reads the inbox once now. Gmail needs IMAP on (Settings, Forwarding and POP/IMAP); it usually is. Turn the buttons off with `notify.email_actions: false`.
 
 ### `jobradar alerts --test` and `jobradar digest --now`
 
@@ -210,7 +180,6 @@ Everything JobRadar does is written to `data/run.log`.
 | Watch for alerts | `tail -f data/run.log \| grep --line-buffered -E "new job\|decision=alert\|alert skipped\|alert email sent\|could not send"` |
 | Jobs hidden because their posting had already closed | `grep "posting closed on the hiring site" data/run.log \| tail -20 \| cut -c1-160` |
 | Closing-soon reminders for jobs you shortlisted | `grep -E "closing reminder\|already closed; no reminder" data/run.log \| tail` |
-| Resumes built, and anything the checker undid | `grep -E "resume built|resume check|resume skipped" data/run.log \| tail -20 \| cut -c1-200` |
 | What was hidden today, and why | `grep "job hidden" data/run.log \| grep "$(date +%F)" \| cut -c1-160` |
 | Emails sent | `grep -E "alert email sent\|digest sent" data/run.log \| tail` |
 | Problems only | `grep -E "WARNING\|ERROR\|Traceback" data/run.log \| tail -20` |
@@ -295,7 +264,6 @@ Then restart (stop, then start). New database columns and tables are added autom
 | `data/tg.session` | Your Telegram login | Only to log out (then run `jobradar init` again); never share it |
 | `data/run.log` | The log | Yes (JobRadar starts a new one) |
 | `data/alerts/` | Dry-run previews of alerts and digests | Yes |
-| `output/` | Generated resumes (v0.3) | Yes |
 
 Back up before risky changes:
 

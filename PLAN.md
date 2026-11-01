@@ -41,14 +41,14 @@ gantt
     SuccessFactors, site by site     :f8, after f11, 3d
     Gate · board alert in 30 min      :milestone, gf, after f8, 0d
 
-    section v0.3 Resume
+    section v0.3 Resume · removed 1 Nov 2026
     Tailor + grounding validator     :c1, after f3, 5d
     Render, compile, page limit      :c2, after c1, 4d
     Drive upload + triggers          :c3, after c2, 5d
     Resume read like an ATS reads it :c4, after c3, 1d
     Gate · 50 jobs, 0 unknown skills  :milestone, g3, after c3, 0d
 
-    section v0.4 Kit + email
+    section v0.4 Kit + email · removed 1 Nov 2026
     Form answers + cover letter      :d1, after c3, 4d
     Email alerts, digest, forwards   :d2, after d1, 3d
     Follow-ups, skill gaps, replies  :d3, after d2, 4d
@@ -81,13 +81,13 @@ flowchart LR
     DED --> FETCH[pipeline/fetch] --> EXT[pipeline/extract]
     LLM[llm.py] --> EXT --> SCORE[pipeline/score]
     SCORE --> NOTION
-    SCORE --> RES[resume/*] --> GD[storage/gdrive] --> NOTION
-    SCORE --> KIT[kit/answers] --> NOTION
     SCORE --> MAIL[sinks/email_notify]
-    NOTION -- poll statuses --> RES
+    NOTION -- poll statuses --> SCORE
 ```
 
 Build bottom-up: config → DB → queue first, because every later module is a task on that queue.
+
+The v0.3 (resume) and v0.4 (apply kit, application and interview tracking) modules were built and then **removed on 1 November 2026** on the owner's call. JobRadar now finds, ranks and tells you about jobs; applying is yours.
 
 ---
 
@@ -98,7 +98,7 @@ Build bottom-up: config → DB → queue first, because every later module is a 
 - [x] PyPI distribution name: `jobradar-agent` (`job-radar` is taken). CLI and import name stay `jobradar`.
 - [x] Notifications go by email (SMTP), not a Telegram bot; manual adds by forwarding to an email folder.
 - [x] Local model: dropped from v1 (Gemini/Groq only); Ollama is a post-v1 idea.
-- [x] Drive is required for resumes; `jobradar doctor` reports it when missing.
+- [x] ~~Drive is required for resumes~~ (removed with the resume module on 1 November 2026).
 - [x] Create the GitHub repo (ThePlator/JobRadar) and fill the README clone URL.
 
 **Repo scaffolding**
@@ -122,7 +122,7 @@ Goal: every job from your channels lands in Notion once, without any AI.
 **Foundation**
 
 - [x] `config.py`: `Settings` via pydantic-settings; load YAML + `.env`; fail fast with clear messages
-- [x] `db/models.py`: SQLModel tables `source`, `raw_message`, `job`, `job_source`, `artifact`, `task`, `llm_cache` (from the LLD schema)
+- [x] `db/models.py`: SQLModel tables `source`, `raw_message`, `job`, `job_source`, `task`, `llm_cache` (from the LLD schema; `artifact` was removed with the resume module)
 - [x] `db/repo.py`: all queries in one place; WAL and foreign keys on connect
 - [ ] `db/migrations/`: alembic baseline (tables are created with `create_all` until the schema settles)
 - [x] `queue/tasks.py`: `enqueue()` (upsert on `(type, key)`), `claim()`, `complete()`, `fail()`
@@ -197,16 +197,16 @@ Goal: every row has structured details and a trustworthy match score.
 
 ---
 
-## v0.2.5 Your statuses and job feeds — before resumes
+## v0.2.5 Your statuses and job feeds
 
 Goal: JobRadar knows what you did with each job, and sees jobs on company boards minutes after they're posted, before any channel reposts them. Plan with diagrams: [Job feeds](https://claude.ai/artifact/ADfAHymemE5AaMZv1vzre9).
 
-**Notion status sync** (needed by resumes, threshold tuning and the digest)
+**Notion status sync** (needed by threshold tuning and the digest)
 
-- [x] `sinks/notion_sync.py` read path: poll the data source every 2 min for pages whose Status the user changed (Shortlisted, Applied, Interview, Offer, Rejected, Skipped, Hidden, New) and mirror it to `job.status` with a `status_change` history; never write Status back except the existing agent hides
-- [x] Digest: your applications line (shortlisted, applied, interviews, offers, moves since the last digest); shortlisted jobs already appear under "Closing"
+- [x] `sinks/notion_sync.py` read path: poll the data source every 2 min for pages whose Status the user changed (Shortlisted, Skipped, Hidden, New; an older database's Applied or Interview map to Shortlisted) and mirror it to `job.status` with a `status_change` history; never write Status back except the existing agent hides
+- [x] Digest: your shortlist line (shortlisted, moves since the last digest); shortlisted jobs already appear under "Closing"
 - [x] Alert when a shortlisted job closes within 24 h
-- [x] `jobradar stats`: funnel, reply rate, and a `scoring.alert_above` suggestion from the scores of jobs you went for vs skipped
+- [x] `jobradar stats`: a `scoring.alert_above` suggestion from the scores of jobs you shortlisted vs skipped
 - [x] Tests: status mapping, a page you moved is never re-hidden, cursor overlap, no tight poll loop
 
 **Job feeds: company boards** (public APIs, no keys)
@@ -298,16 +298,18 @@ Not possible: LinkedIn, Naukri and Indeed have no public job API and forbid scra
 
 **Outcomes: is JobRadar working?** (builds on the `jobradar stats` funnel)
 
-- [ ] `jobradar stats` funnel per source (each Telegram channel, each board, each drive page): jobs, alerts, applied, interviews, offers
-- [ ] Alerted vs not: interviews from jobs that sent an alert vs jobs you found in the Inbox or digest
-- [ ] Time from post to applied, and from applied to the first reply
-- [ ] Digest line once a week: the sources that led to interviews, and the ones with none in 30 days (candidates to mute)
+- [ ] `jobradar stats` per source (each Telegram channel, each board, each drive page): jobs, alerts, shortlisted
+- [ ] Alerted vs not: shortlisted jobs that sent an alert vs jobs you found in the Inbox or digest
+- [ ] Time from post to shortlisted
+- [ ] Digest line once a week: the sources that led to shortlists, and the ones with none in 30 days (candidates to mute)
 
 **Exit gate:** a job posted on a watched board reaches your inbox in under 30 minutes, with no alerts from the first check and no false "Closed". A change on a watched drive page reaches your inbox within one check interval, and the logs show no fetch of a robots-disallowed page.
 
 ---
 
-## v0.3 Resume — weeks 5–6
+## v0.3 Resume — weeks 5–6 (removed 1 November 2026)
+
+> **Removed.** The resume builder, the ATS check and the apply kit were deleted on 1 November 2026, with their CLI commands, dashboard panels, Notion columns and settings. The notes below are the plan as it was built; they are kept for the record.
 
 Goal: strong matches get a one-page, fully grounded PDF linked from Notion.
 
@@ -351,7 +353,9 @@ An applicant tracking system (Workday, Oracle, SuccessFactors) reads the PDF's t
 
 ---
 
-## v0.4 Apply kit and email — week 7
+## v0.4 Apply kit and email — week 7 (partly removed 1 November 2026)
+
+> **Removed.** The apply kit (form answers, cover letter), the follow-up reminders, the company-reply reader and the application and interview statuses were deleted on 1 November 2026. The email alerts, the digest and the email buttons (now **Shortlist** / **Not interested**) stayed. The notes below are the plan as it was built.
 
 Goal: from a shortlisted job to a submitted form in under 5 minutes.
 
@@ -390,11 +394,11 @@ JobRadar stops at the alert today. These use data it already keeps: your dated N
 
 ## v0.5 Dashboard — my own page instead of Notion
 
-Goal: see and update every job and application on a local web page that reads JobRadar's own database, so Notion is no longer needed. Full plan with diagrams: [JobRadar Dashboard Plan](https://claude.ai/artifact/UTjmazUv7xhyssXD4aoFUz) (private link).
+Goal: see and update every job on a local web page that reads JobRadar's own database, so Notion is no longer needed. Full plan with diagrams: [JobRadar Dashboard Plan](https://claude.ai/artifact/UTjmazUv7xhyssXD4aoFUz) (private link).
 
 **Decisions (19 Oct 2026)**
 
-- Keep SQLite. `data/jobradar.db` already holds everything Notion shows (814 jobs, 306 alerts, 35 resumes and letters, the `status_change` history), so no data moves. MongoDB is not used: it would add a server to run and back up and a rewrite of the task queue (which relies on SQL transactions) and its tests, for no gain at this size. If the data ever needs to be reachable from anywhere, a hosted Postgres fits the existing SQL better.
+- Keep SQLite. `data/jobradar.db` already holds everything Notion shows (814 jobs, 306 alerts, the `status_change` history), so no data moves. MongoDB is not used: it would add a server to run and back up and a rewrite of the task queue (which relies on SQL transactions) and its tests, for no gain at this size. If the data ever needs to be reachable from anywhere, a hosted Postgres fits the existing SQL better.
 - FastAPI on Uvicorn: async like the rest of JobRadar, so the server is one more task in the same event loop; typed routes from the existing Pydantic models; the test client works with pytest.
 - Pages are Jinja2 templates rendered on the server (Jinja2 is already a dependency), with **htmx** for clicks without reloads. No Node build step, so the PyPI package still ships everything. Every page's data is also served as JSON under `/api/`, so a React front end can be added later without changing the server (see "Later: React").
 - Port **8080** by default (`web.port`). If something else is using it, JobRadar tries 8081–8089 and logs the address it took; set `web.port` to pin one.
@@ -405,7 +409,7 @@ flowchart LR
     TG[Telegram] --> W[Task queue + worker]
     BD[Company boards] --> W
     IM[Gmail IMAP] --> W
-    W --> P[Pipeline: extract, match, resume]
+    W --> P[Pipeline: extract, match]
     P -->|writes| DB[(jobradar.db)]
     DB -->|alerts, digest| EM[Email]
     DB <-.->|two-way, every 2 min, optional| NO[Notion]
@@ -422,22 +426,22 @@ src/jobradar/web/
   app.py           create_app(settings, repo, queue)
   server.py        Uvicorn inside JobRadar's event loop; port fallback
   security.py      page token, Host check, localhost by default
-  views.py         read models: today list, board columns, job detail
+  views.py         read models: today list, job list, job detail
   routes/          pages.py (HTML), actions.py (POST), api.py (JSON)
-  templates/       base, today, applications, jobs, job, skills, partials/job_card
+  templates/       base, today, jobs, job, skills, partials/job_card
   static/          app.css, htmx.min.js (pinned, shipped with the package)
 src/jobradar/pipeline/status_rules.py   forward-only rules, moved out of email_actions.py
 ```
 
 Config: `web: {enabled: true, host: 127.0.0.1, port: 8080}`. Dependencies `fastapi` and `uvicorn` go in an optional extra, `jobradar-agent[web]`.
 
-**Pages**: Today (new good matches with Shortlist / Not interested / I applied), Applications (board: Shortlisted → Applied → Interview → Offer or Rejected, with follow-up and company-reply chips), Job page (posting, score reasons, eligibility, sources, status history, resume and cover letter with the ATS check, Change status to any value), All jobs (search and filters; replaces the Notion table), Skills (skill gaps any time).
+**Pages**: Today (new good matches with Shortlist / Not interested), Job page (posting, score reasons, eligibility, sources, status history, Change status to any value), All jobs (search and filters; replaces the Notion table), Skills (skill gaps any time). The Applications board and the resume panel were removed on 1 November 2026 with their modules.
 
 **Steps** (one PR each)
 
-- [x] Read-only pages: `jobradar web` starts the server; Today, Applications, All jobs, Job page from the existing database. No buttons yet
+- [x] Read-only pages: `jobradar web` starts the server; Today, All jobs, Job page from the existing database. No buttons yet
 - [x] Buttons: `pipeline/status_rules.py` shared with the email buttons; status buttons and Change status menu; page token on every POST and a Host header check; Notion write queued like the email buttons
-- [x] Inside `jobradar run` (one thing to start); resume and cover letter links with the ATS report (files served by artifact id, never by path); Build resume button; follow-up and company-reply chips
+- [x] Inside `jobradar run` (one thing to start); the resume panel and follow-up chips came later with their modules and were removed again on 1 November 2026
 - [x] Skills page, full-text search, phone layout, light and dark themes matching the site; alert and digest emails link to the job page too
 - [x] `notion.enabled: false` stops every Notion call cleanly (and Telegram can be off too); Tailscale guide for phone access (`web.url`); README and website describe the dashboard. Whether to switch Notion off is decided after a week of use
 
@@ -448,7 +452,6 @@ Config: `web: {enabled: true, host: 127.0.0.1, port: 8080}`. Dependencies `fasta
 - [x] Every page renders from a seeded database; unknown job → 404
 - [x] Status moves follow the shared rules; POST without the token → 403; foreign Host → 400; a move queues `notion_status`
 - [x] Busy port 8080 → the next free port is used and logged
-- [x] A file route can't serve anything outside the `artifact` table
 
 **Later: React.** Moves to React when the page needs things htmx makes awkward: a drag-and-drop board, charts of applications over time, offline use on the phone. Then: Vite + React + TypeScript in a top-level `frontend/` folder, reading the `/api/` JSON; CI builds it into `web/static/app/` so the Python package still needs no Node at install time; the htmx pages stay until every page has a React version.
 
@@ -458,12 +461,12 @@ Config: `web: {enabled: true, host: 127.0.0.1, port: 8080}`. Dependencies `fasta
 
 ## v1.0 Public open-source launch — week 8
 
-- [ ] `Dockerfile`: Python + Tectonic + Tesseract (+ Playwright Chromium or a separate `browser` service); pre-warm Tectonic packages for `classic`/`modern`
-- [ ] `docker-compose.yml`: `jobradar`, `browser`; profile `whatsapp`; volumes `./data`, `./output`, `./config`
+- [ ] `Dockerfile`: Python + Tesseract (+ Playwright Chromium or a separate `browser` service)
+- [ ] `docker-compose.yml`: `jobradar`, `browser`; profile `whatsapp`; volumes `./data`, `./config`
 - [ ] Publish the Notion template and link it from the README
 - [ ] `wa-bridge/` Node sidecar + `sources/whatsapp.py` (local HTTP), off by default, with a ban-risk warning
 - [ ] Docs: setup walkthrough with screenshots, Telegram / Notion / Google / Gemini / email app-password guides, troubleshooting, plugin authoring guide (`CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `SUPPORT.md`, `CHANGELOG.md`, issue/PR templates done)
-- [ ] CI: Docker build, template compile, gitleaks, Dependabot
+- [ ] CI: Docker build, gitleaks, Dependabot
 - [ ] Release: tag `v1.0.0`, publish the image and the PyPI package `jobradar-agent`
 - [ ] Fresh-machine test: someone new follows the README cold
 
@@ -485,9 +488,7 @@ Config: `web: {enabled: true, host: 127.0.0.1, port: 8080}`. Dependencies `fasta
 | Telegram account restriction | `FloodWaitError` frequency rising | Lower catch-up rate; never send from the user account |
 | Extraction accuracy stalls below 90% | Golden report after week 3 | Add site adapters; tune `extract.md`; try a stronger `extract_model` |
 | Gemini / Groq free-tier limits | 429s in logs | Raise budget, spread load, or switch provider in config |
-| Auto-resume volume too high | Digest shows many auto-builds | Raise `auto_resume_above` |
 | Alert emails go to spam | Test email not in inbox | Send from your own account to yourself; add a filter on `List-Id: jobradar` |
-| Tectonic cold start in Docker | Slow first compile, network errors | Pre-warm the package cache in the image |
 | Notion rate limits | 429s during backfill | Rely on the limiter; batch body appends |
 | A hiring platform changes its public API | Board errors or "unknown" still-open results jump in `boards list` | Treat as unknown (never closed); fix that provider; recorded-response tests catch the shape change |
 | A drive page is redesigned | One page posts a burst of "changes" that aren't jobs | Cap posts per page per check; when most of the text changed at once, take a new silent baseline instead of posting |
@@ -495,4 +496,4 @@ Config: `web: {enabled: true, host: 127.0.0.1, port: 8080}`. Dependencies `fasta
 
 ## Metrics to verify before v1.0
 
-Duplicate rate under 5% · extraction accuracy over 90% · relevant jobs missed under 5% · apply time under 5 min · resume hallucination 0% · setup time under 15 min.
+Duplicate rate under 5% · extraction accuracy over 90% · relevant jobs missed under 5% · setup time under 15 min.

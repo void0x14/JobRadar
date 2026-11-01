@@ -1,4 +1,4 @@
-"""JobRadar: watch job channels, rank postings, build tailored resumes, track it all in Notion."""
+"""JobRadar: watch job channels, rank postings and send you the ones worth your time."""
 
 from importlib.metadata import PackageNotFoundError, version
 

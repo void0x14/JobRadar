@@ -24,7 +24,7 @@ def test_unimplemented_commands_fail_loudly() -> None:
 def test_example_configs_parse() -> None:
     config = yaml.safe_load((ROOT / "config.example.yaml").read_text())
     profile = yaml.safe_load((ROOT / "profile.example.yaml").read_text())
-    assert config["scoring"]["auto_resume_above"] == 85
+    assert config["scoring"]["alert_above"] == 75
     assert config["llm"]["extract_model"].startswith("gemini/")
     assert profile["basics"]["name"]
 

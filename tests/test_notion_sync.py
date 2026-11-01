@@ -39,41 +39,58 @@ def sync(repo: Repo, queue: TaskQueue, clock: FakeClock, client: FakeClient) -> 
 async def test_your_statuses_are_copied_and_ours_ignored(
     repo: Repo, queue: TaskQueue, clock: FakeClock
 ) -> None:
-    for job_id in ("applied", "untouched", "unhidden"):
+    for job_id in ("shortlisted", "untouched", "unhidden"):
         add(repo, job_id)
     repo.set_job_status("unhidden", JobStatus.HIDDEN, "weak match (30)")
     client = FakeClient([
-        page("applied", "Applied"),
+        page("shortlisted", "Shortlisted"),
         page("untouched", "New"),  # JobRadar's own value: not a decision of yours
         page("unhidden", "New"),  # you moved a hidden job back to New
-        page(None, "Applied"),  # a page you made yourself
-        page("nobody", "Applied"),  # not a job JobRadar knows
+        page(None, "Shortlisted"),  # a page you made yourself
+        page("nobody", "Shortlisted"),  # not a job JobRadar knows
         page("untouched", "Maybe later"),  # an option JobRadar doesn't know
     ])  # fmt: skip
     s = sync(repo, queue, clock, client)
 
     assert await s.poll_now() == 2
     assert client.since == [FIRST_SINCE]  # the first poll reads everything once
-    applied, untouched, unhidden = (repo.get_job(j) for j in ("applied", "untouched", "unhidden"))
-    assert applied is not None and applied.status == JobStatus.APPLIED
-    assert applied.user_status_at is not None
+    short, untouched, unhidden = (repo.get_job(j) for j in ("shortlisted", "untouched", "unhidden"))
+    assert short is not None and short.status == JobStatus.SHORTLISTED
+    assert short.user_status_at is not None
     assert untouched is not None and untouched.user_status_at is None
     assert unhidden is not None and unhidden.status == JobStatus.NEW and unhidden.user_status_at
-    assert repo.status_changes_since("2000-01-01T00:00:00.000000Z") == {"applied": 1, "new": 1}
+    assert repo.status_changes_since("2000-01-01T00:00:00.000000Z") == {"shortlisted": 1, "new": 1}
+
+
+async def test_the_old_application_statuses_still_mean_something(
+    repo: Repo, queue: TaskQueue, clock: FakeClock
+) -> None:
+    """A Notion database from before the split still says Applied or Rejected."""
+    add(repo, "went-for-it")
+    add(repo, "no-thanks")
+    s = sync(
+        repo,
+        queue,
+        clock,
+        FakeClient([page("went-for-it", "Applied"), page("no-thanks", "Rejected")]),
+    )
+    assert await s.poll_now() == 2
+    assert repo.get_job("went-for-it").status == JobStatus.SHORTLISTED.value  # type: ignore[union-attr]
+    assert repo.get_job("no-thanks").status == JobStatus.SKIPPED.value  # type: ignore[union-attr]
 
 
 async def test_cursor_overlaps_and_repeats_are_ignored(
     repo: Repo, queue: TaskQueue, clock: FakeClock
 ) -> None:
     add(repo, "a")
-    client = FakeClient([page("a", "Interview")], [page("a", "Interview")])
+    client = FakeClient([page("a", "Shortlisted")], [page("a", "Shortlisted")])
     s = sync(repo, queue, clock, client)
     await s.poll_now()
     assert repo.get_setting(CURSOR_KEY) == "2026-10-08T08:59:00.000000Z"  # a minute of overlap
     clock.advance(120)
     assert await s.poll_now() == 0  # the same page again: nothing new
     assert client.since[1] == "2026-10-08T08:59:00.000000Z"
-    assert repo.status_changes_since("2000-01-01T00:00:00.000000Z") == {"interview": 1}
+    assert repo.status_changes_since("2000-01-01T00:00:00.000000Z") == {"shortlisted": 1}
 
 
 async def test_poll_task_reschedules_itself(repo: Repo, queue: TaskQueue, clock: FakeClock) -> None:
@@ -94,20 +111,3 @@ async def test_poll_task_reschedules_itself(repo: Repo, queue: TaskQueue, clock:
     assert third is not None and third.key == task.key  # the two keys take turns
     s.schedule()  # a restart while a poll is queued doesn't start a second chain
     queue.complete(third)
-
-
-async def test_followed_up_date_is_kept_per_job(
-    repo: Repo, queue: TaskQueue, clock: FakeClock
-) -> None:
-    from jobradar.sinks.notion_sync import FOLLOWED_UP
-
-    add(repo, "j1")
-    dated = page("j1", "Applied")
-    dated["properties"]["Followed Up"] = {"type": "date", "date": {"start": "2026-10-19"}}
-    cleared = page("j1", "Applied")
-    cleared["properties"]["Followed Up"] = {"type": "date", "date": None}
-    s = sync(repo, queue, clock, FakeClient([dated], [cleared]))
-    await s.poll_now()
-    assert repo.get_setting(FOLLOWED_UP + "j1") == "2026-10-19"
-    await s.poll_now()
-    assert repo.get_setting(FOLLOWED_UP + "j1") == ""  # you cleared it

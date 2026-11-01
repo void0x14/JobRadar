@@ -1,6 +1,6 @@
-"""The dashboard's web app: pages for today's matches, your applications, every job, and one
-job, read from JobRadar's database. Read-only for now: statuses still change from the email
-buttons or Notion.
+"""The dashboard's web app: pages for today's matches, every job, and one job, read from
+JobRadar's database. Read-only for now: statuses still change from the email buttons or
+Notion.
 
 It runs on this computer only. A browser sends requests to 127.0.0.1 from any site you have
 open, so requests naming any other host are refused (that stops a site posing as localhost,
@@ -21,7 +21,6 @@ from urllib.parse import parse_qs, urlsplit
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import (
-    FileResponse,
     HTMLResponse,
     JSONResponse,
     RedirectResponse,
@@ -36,7 +35,6 @@ from jobradar.clock import Clock, utcnow
 from jobradar.config import ConfigError, Settings
 from jobradar.db.repo import Repo
 from jobradar.pipeline import status_rules as rules
-from jobradar.pipeline.task_types import BUILD_RESUME
 from jobradar.profile import add_skill, load_profile
 from jobradar.queue.tasks import TaskQueue
 from jobradar.sinks.digest import build_digest, gather
@@ -185,14 +183,6 @@ def create_app(
             filters=views.QUICK_FILTERS,
         )  # fmt: skip
 
-    @app.get("/applications", response_class=HTMLResponse)
-    def applications(request: Request) -> HTMLResponse:
-        columns = views.board(repo, settings, clock())
-        return render(request, "applications.html", "applications", columns=columns,
-                      quiet_after=config.notify.followup_after_days,
-                      funnel=views.funnel(repo, good),
-                      by_source=views.source_strip(repo, tz))  # fmt: skip
-
     @app.get("/jobs", response_class=HTMLResponse)
     def jobs(
         request: Request,
@@ -242,7 +232,7 @@ def create_app(
     @app.get("/jobs/{job_id}", response_class=HTMLResponse)
     def job(request: Request, job_id: str) -> HTMLResponse:
         detail = views.job_detail(
-            repo, job_id, tz, clock(), config.matching.weights, current_profile(), settings
+            repo, job_id, tz, clock(), config.matching.weights, current_profile()
         )
         if detail is None:
             raise HTTPException(status_code=404)
@@ -264,8 +254,7 @@ def create_app(
 
     def answer(request: Request, outcome: rules.Outcome, job_id: str, back: str) -> Response:
         if request.headers.get("x-jobradar-token"):  # the page's own script: it updates itself
-            undo = outcome.before if outcome.before in {s.value for s in rules.YOURS} else (
-                "shortlisted" if outcome.before == "resume_ready" else "new")  # fmt: skip
+            undo = outcome.before if outcome.before in {s.value for s in rules.YOURS} else "new"
             job = repo.get_job(job_id)
             row = ""
             if job is not None and outcome.ok:
@@ -287,8 +276,7 @@ def create_app(
         job = repo.get_job(job_id)
         if job is None:
             raise HTTPException(status_code=404)
-        today = clock().astimezone(tz).date()
-        outcome = rules.act(repo, queue, job, fields.get("action", ""), today)
+        outcome = rules.act(repo, queue, job, fields.get("action", ""))
         nudge()
         log.info("your dashboard action", extra={"job_id": job_id[:10], "ok": outcome.ok,
                                                  "action": outcome.action})  # fmt: skip
@@ -304,46 +292,6 @@ def create_app(
         nudge()
         log.info("your dashboard status", extra={"job_id": job_id[:10], "status": outcome.after})
         return answer(request, outcome, job_id, fields.get("next", ""))
-
-    # ---- resumes and cover letters ---------------------------------------------------------
-
-    @app.get("/files/{artifact_id}")
-    def file(artifact_id: int, cover: int = 0) -> FileResponse:
-        """A resume (or the cover letter beside it) by its id in the database. The path comes
-        from the database, never the address, and must be a PDF inside storage.local_dir."""
-        artifact = repo.get_artifact(artifact_id)
-        path = views.artifact_file(settings, artifact, bool(cover)) if artifact else None
-        if path is None:
-            raise HTTPException(status_code=404)
-        return FileResponse(path, media_type="application/pdf",
-                            content_disposition_type="inline", filename=path.name)  # fmt: skip
-
-    @app.post("/jobs/{job_id}/resume")
-    async def build_resume(request: Request, job_id: str) -> Response:
-        fields = await checked_form(request)
-        job = repo.get_job(job_id)
-        if job is None:
-            raise HTTPException(status_code=404)
-        if not config.resume.enabled:
-            message, ok = "Resumes are off (resume.enabled in config.yaml).", False
-        else:
-            queue.enqueue(BUILD_RESUME, job.id, {"why": "manual"})
-            nudge()
-            message, ok = f"Building a resume for {views.card(job, tz).role}…", True
-        log.info("your dashboard resume", extra={"job_id": job_id[:10], "ok": ok})
-        if request.headers.get("x-jobradar-token"):
-            return JSONResponse({"ok": ok, "message": message,
-                                 "count": len(repo.artifacts_of(job.id))},
-                                status_code=200 if ok else 409)  # fmt: skip
-        return RedirectResponse(safe_next(fields.get("next")), status_code=303)
-
-    @app.get("/api/jobs/{job_id}/resumes")
-    def resumes(job_id: str) -> JSONResponse:
-        """How many resumes a job has and whether one is being built: the page polls this."""
-        return JSONResponse({
-            "count": len(repo.artifacts_of(job_id)),
-            "building": repo.task_waiting(BUILD_RESUME, job_id),
-        })  # fmt: skip
 
     # ---- skills ------------------------------------------------------------------------------
 

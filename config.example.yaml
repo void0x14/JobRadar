@@ -45,7 +45,7 @@ llm:
   extract_model: "gemini/gemini-flash-lite-latest"  # extraction + scoring (cheap, fast)
   extract_mode: fallback    # fallback: LLM only when the page and post don't state role and
                             #   company (most posts do); always: every job (adds summaries)
-  writer_model: "gemini/gemini-flash-latest"      # resumes + form answers (Pro has no free tier)
+  writer_model: "gemini/gemini-flash-latest"      # longer job summaries (Pro has no free tier)
   # Groq alternative:
   # extract_model: "groq/llama-3.1-8b-instant"
   # writer_model:  "groq/llama-3.3-70b-versatile"
@@ -75,21 +75,11 @@ matching:
 scoring:
   hide_below: 40          # below → Hidden
   alert_above: 75         # at or above → email alert (if eligible, confident and not a scam)
-  auto_resume_above: 85   # at or above → resume + kit built automatically; null = only on Shortlisted
-
-resume:
-  template: classic       # your LaTeX layout (src/jobradar/resume/templates/), or a path to a .tex.j2
-  max_pages: 1
-  tailor: true            # false: every resume is profile.yaml as written
-  max_per_day: 10         # automatic builds (score >= auto_resume_above); Shortlisted always builds
 
 links:
   extra_shorteners: []    # your channels' own redirect domains, e.g. ["go.somejobs.in"]
   deny: []                # never jobs: hosts or host/path prefixes, e.g.
                           # ["acciojob.com/full-stack-development-courses"]
-
-storage:
-  local_dir: ./output     # resumes: {Company}_{Role}_{yyyymmdd}_v{n}.pdf, with the .tex next to it
 
 email:
   smtp_host: smtp.gmail.com
@@ -107,11 +97,8 @@ notify:
   digest: true            # summary email at each digest time (skipped when nothing happened)
   digest_times: ["09:00", "19:00"]
   closing_reminders: true # email when a job you shortlisted closes today or tomorrow
-  followups: true         # a follow-up draft when a job you set to Applied gets no reply
-  followup_after_days: 10 #   for this long (at most 2 per job; Notion's Followed Up resets it)
-  email_actions: true     # "I applied" / "Not interested" buttons in emails (read over IMAP)
+  email_actions: true     # "Shortlist" / "Not interested" buttons in emails (read over IMAP)
   skill_gaps: true        # weekly digest section: skills your good matches name that you lack
-  company_replies: true   # read new mail from companies you applied to; suggest Interview etc.
   timezone: Asia/Kolkata
 
 web:                      # the dashboard at http://127.0.0.1:8080 (needs `uv sync --extra web`)

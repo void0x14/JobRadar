@@ -16,8 +16,8 @@
 
   const LINES = [
     "Beep. I read every channel and board so you don't have to.",
-    "Applied somewhere? Tap “I applied” in my email and I'll keep track.",
-    "Ten quiet days after you apply, I'll draft a follow-up for you.",
+    "Shortlisted a job? Tap “Shortlist” in my email and I'll remember it.",
+    "A job closing tomorrow? I'll remind you before it does.",
     "Press Ctrl K to jump to any job I've found.",
     "Try j and k to move down the list, Enter to open.",
     "Boop. That tickles.",
@@ -241,48 +241,10 @@
         row.replaceWith(next);
         toast(out.message, undo);
       } else {
-        reloadWith(out.message, undo);  // the board and the job page re-render
+        reloadWith(out.message, undo);  // the job page re-renders
       }
     });
 
-
-
-    // ---- resumes: build one, and update when it's ready ----
-    const watchBuild = (id, count, label) => {
-      const started = Date.now();
-      const tick = async () => {
-        try {
-          const now = await (await fetch(`/api/jobs/${encodeURIComponent(id)}/resumes`)).json();
-          if (now.count > count) { reloadWith(`Resume ready${label ? ` for ${label}` : ""}.`, null); return; }
-          if (!now.building && Date.now() - started > 20000) {
-            toast("The resume didn't build. Check `jobradar run`'s log for why.", null, true);
-            document.querySelectorAll("[data-building]").forEach((el) => { el.hidden = true; });
-            return;
-          }
-        } catch { /* the server restarted: keep trying */ }
-        if (Date.now() - started < 10 * 60 * 1000) setTimeout(tick, 3000);
-      };
-      setTimeout(tick, 3000);
-    };
-    document.addEventListener("submit", async (e) => {
-      const form = e.target;
-      if (!(form instanceof HTMLFormElement) || !form.matches("[data-build]")) return;
-      e.preventDefault();
-      const button = form.querySelector("button");
-      button.disabled = true;
-      const url = form.getAttribute("action");
-      const id = decodeURIComponent(url.split("/jobs/")[1].split("/")[0]);
-      const out = await send(url, Object.fromEntries(new FormData(form)));
-      if (!out.ok) { button.disabled = false; toast(out.message, null, true); return; }
-      button.textContent = "Building…";
-      document.querySelectorAll("[data-building]").forEach((el) => { el.hidden = false; });
-      toast(out.message);
-      watchBuild(id, out.count, "");
-    });
-    const panel = document.querySelector("[data-resumes]");
-    if (panel && !panel.querySelector("[data-building]").hidden) {
-      watchBuild(panel.dataset.id, Number(panel.dataset.count), "");
-    }
 
     // ---- Skills: "I know this" ----
     document.addEventListener("submit", async (e) => {
@@ -297,23 +259,6 @@
       if (row) leave(row);
       toast(out.message);
     });
-
-    // ---- the follow-up draft: copy it ----
-    document.querySelector("[data-copy]")?.addEventListener("click", async () => {
-      const subject = document.querySelector("[data-copy-subject]").textContent.trim();
-      const body = document.querySelector("[data-copy-body]").textContent;
-      try {
-        await navigator.clipboard.writeText(`Subject: ${subject}\n\n${body}`);
-        toast("Copied. Paste it into a new email.");
-      } catch {
-        const range = document.createRange();
-        range.selectNodeContents(document.querySelector("[data-copy-body]"));
-        getSelection().removeAllRanges();
-        getSelection().addRange(range);
-        toast("Selected: press Ctrl+C to copy.");
-      }
-    });
-
 
     // ---- Today on a phone: swipe a card right to shortlist, left for not interested ----
     if (document.querySelector("[data-toolbar]") && matchMedia("(pointer: coarse)").matches) {
@@ -347,58 +292,6 @@
         done.style.transform = "";
         row = null;
         if (form) form.requestSubmit();
-      });
-    }
-
-    // ---- Applications: drag a card to another column ----
-    const boardEl = document.querySelector("[data-board]");
-    if (boardEl) {
-      let dragged = null;
-      const columnOf = (status) => (status === "resume_ready" ? "shortlisted" : status);
-      boardEl.addEventListener("dragstart", (e) => {
-        const card = e.target.closest?.(".card");
-        if (!card) return;
-        dragged = card;
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/plain", card.dataset.id);
-        card.classList.add("dragging");
-        card.closest(".col")?.classList.add("from");
-        requestAnimationFrame(() => boardEl.classList.add("dragging"));
-      });
-      boardEl.addEventListener("dragend", () => {
-        dragged?.classList.remove("dragging");
-        boardEl.classList.remove("dragging");
-        boardEl.querySelectorAll("[data-drop]").forEach((c) => c.classList.remove("over", "from"));
-        dragged = null;
-      });
-      boardEl.querySelectorAll("[data-drop]").forEach((col) => {
-        col.addEventListener("dragover", (e) => {
-          if (!dragged || columnOf(dragged.dataset.status) === col.dataset.drop) return;
-          e.preventDefault();
-          e.dataTransfer.dropEffect = "move";
-          col.classList.add("over");
-        });
-        col.addEventListener("dragleave", (e) => {
-          if (!col.contains(e.relatedTarget)) col.classList.remove("over");
-        });
-        col.addEventListener("drop", async (e) => {
-          e.preventDefault();
-          col.classList.remove("over");
-          const card = dragged;
-          if (!card || columnOf(card.dataset.status) === col.dataset.drop) return;
-          const home = card.parentElement;
-          const into = col.querySelector(".cards");
-          if (into) into.prepend(card);  // move it at once; the server confirms
-          else card.hidden = true;  // dropped on an empty stage: it shows there after the reload
-          const out = await send(`/jobs/${encodeURIComponent(card.dataset.id)}/status`, { status: col.dataset.drop });
-          if (!out.ok) {
-            card.hidden = false;
-            home.prepend(card);
-            toast(out.message, null, true);
-            return;
-          }
-          reloadWith(out.message, out.undo ? { id: card.dataset.id, status: out.undo } : null);
-        });
       });
     }
 
@@ -475,7 +368,7 @@
       if (e.ctrlKey || e.metaKey || e.altKey || typing(e.target) || palette?.open) return;
       if (g) {
         g = false;
-        const to = { t: "/", a: "/applications", j: "/jobs", s: "/skills", d: "/digest" }[e.key];
+        const to = { t: "/", j: "/jobs", s: "/skills", d: "/digest" }[e.key];
         if (to) { e.preventDefault(); window.location.href = to; }
         return;
       }

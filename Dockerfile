@@ -1,4 +1,4 @@
-# Base image only. Tectonic, Tesseract and Playwright are added in the releases that need them (PLAN.md).
+# Base image only. Tesseract and Playwright are added in the releases that need them (PLAN.md).
 FROM python:3.14-slim
 
 COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /uvx /bin/

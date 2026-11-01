@@ -1,7 +1,7 @@
 [project]
 name = "jobradar-agent"  # PyPI name; the CLI command and import package stay `jobradar`
 version = "0.0.1"
-description = "Self-hosted agent that turns job channels into a ranked Notion inbox with tailored resumes."
+description = "Self-hosted agent that turns job channels into a ranked inbox of jobs worth applying to."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -28,7 +28,6 @@ dependencies = [
     "httpx>=0.27",
     "litellm>=1.50",
     "trafilatura>=1.12",
-    "pypdf>=6.20.1",
     "jinja2>=3.1",
 ]
 
@@ -46,7 +45,6 @@ jobradar = "jobradar.__main__:app"
 # Plugin entry-point groups (built-ins are registered here as they are implemented):
 # [project.entry-points."jobradar.sources"]
 # [project.entry-points."jobradar.site_adapters"]
-# [project.entry-points."jobradar.storage"]
 # [project.entry-points."jobradar.sinks"]
 
 [dependency-groups]

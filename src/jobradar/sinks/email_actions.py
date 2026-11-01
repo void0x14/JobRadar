@@ -1,15 +1,14 @@
-"""Answer JobRadar's emails instead of opening Notion: "I applied", "Not interested",
-"I followed up".
+"""Answer JobRadar's emails instead of opening the dashboard: "Shortlist", "Not interested".
 
 Each job card in an alert, digest or reminder email carries small buttons. A button is a
 `mailto:` link to your own address with a ready subject such as
 
-    JobRadar action: applied | Software Engineer @ Rubrik | 1a2b3c4d5e6f.0c9d8e7f
+    JobRadar action: shortlist | Software Engineer @ Rubrik | 1a2b3c4d5e6f.0c9d8e7f
 
 You tap it and press Send. A `reply_check` task reads the INBOX over IMAP every 2 minutes
 (`EMAIL_ADDRESS` and its app password, the same login that sends alerts) and acts on these
-emails: the job's Status becomes Applied or Skipped, or its Followed Up date is set, in
-JobRadar and in Notion. The email is then archived (Gmail) or marked read.
+emails: the job's Status becomes Shortlisted or Skipped, in JobRadar and in Notion. The email
+is then archived (Gmail) or marked read.
 
 Only emails that pass every check count, so nobody else can change your jobs:
 - the subject carries the job id and a signature made with a key only this JobRadar has
@@ -17,8 +16,8 @@ Only emails that pass every check count, so nobody else can change your jobs:
 - it is from `EMAIL_ADDRESS` or `NOTIFY_TO`;
 - the server's own Authentication-Results, when present, show no failed SPF, DKIM or DMARC.
 
-Statuses only move forward: "I applied" works on a job you haven't moved past Applied,
-"Not interested" on one you haven't applied to, "I followed up" on an Applied job.
+Statuses only move forward: "Shortlist" works on a job you haven't shortlisted, "Not
+interested" on one you haven't skipped.
 """
 
 from __future__ import annotations
@@ -34,12 +33,12 @@ import re
 import secrets
 import ssl
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from email.message import EmailMessage
 from email.policy import default as default_policy
-from email.utils import getaddresses, parsedate_to_datetime
+from email.utils import getaddresses
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Literal
 from urllib.parse import quote
 
 from jobradar.clock import Clock, utcnow
@@ -53,26 +52,18 @@ from jobradar.queue.tasks import PermanentError, RetryableError, TaskQueue
 
 log = logging.getLogger(__name__)
 
-Action = Literal["applied", "skip", "followed up", "interview", "rejected"]
+Action = Literal["shortlist", "skip"]
 PREFIX = "JobRadar action:"
 KEY_SETTING = "email_action_key"
 DONE = "email_action_done:"  # setting key prefix, per message: handled already
-REPLIED = "company_replied:"  # setting key prefix, per job: the company wrote back (JSON)
 CHECK_SECONDS = 120
 LOOK_BACK = timedelta(days=7)
 ID_CHARS = 12
 _SUBJECT = re.compile(
-    r"JobRadar action:\s*(applied|skip|followed up|interview|rejected)\b.*?"
+    r"JobRadar action:\s*(shortlist|skip)\b.*?"
     r"\b([0-9a-f]{12})\.([0-9a-f]{8})\b",
     re.IGNORECASE | re.DOTALL,
 )
-_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-_HR_WORDS = re.compile(r"hr|career|recruit|talent|hiring|jobs|people|placement", re.IGNORECASE)
-
-# The rules are shared with the dashboard (pipeline/status_rules.py).
-_FROM = rules.FROM
-NOTION_OPTION = {"applied": "Applied", "skip": "Skipped", "interview": "Interview",
-                 "rejected": "Rejected"}  # fmt: skip
 
 
 def _title(job: Job) -> str:
@@ -113,9 +104,7 @@ class Actions:
         return f"{PREFIX} {action} | {_title(job)} | {token}"
 
     def link(self, action: Action, job: Job) -> str:
-        what = {"applied": "Applied", "skip": "Skipped (not interested)",
-                "followed up": "followed up today", "interview": "Interview",
-                "rejected": "Rejected"}[action]  # fmt: skip
+        what = {"shortlist": "Shortlisted", "skip": "Skipped (not interested)"}[action]
         body = (
             f"Send this email as it is. JobRadar marks {_title(job)} as {what} within "
             "a few minutes, then archives this email."
@@ -123,12 +112,10 @@ class Actions:
         return mailto(self.address, self.subject(action, job), body)
 
     def job_links(self, job: Job) -> list[tuple[str, str]]:
-        """Buttons for a job you haven't applied to yet."""
-        if job.status not in _FROM["applied"]:
-            return []
+        """Buttons for a job, by where it stands now."""
+        buttons: list[tuple[Action, str]] = [("shortlist", "Shortlist"), ("skip", "Not interested")]
         return [
-            ("I applied", self.link("applied", job)),
-            ("Not interested", self.link("skip", job)),
+            (label, self.link(action, job)) for action, label in buttons if rules.can(action, job)
         ]
 
     def parse(self, subject: str) -> tuple[Action, str] | None:
@@ -155,8 +142,7 @@ def dashboard_url(settings: Settings) -> str:
     return web.url or f"http://{web.host}:{web.port}"
 
 
-_WORDS = {"applied": "I applied", "skip": "Not interested", "followed up": "I followed up",
-          "interview": "Yes, set Interview", "rejected": "Yes, set Rejected"}  # fmt: skip
+_WORDS = {"shortlist": "Shortlist", "skip": "Not interested"}
 
 
 def build_ignored(
@@ -200,30 +186,7 @@ def build_ignored(
     return msg
 
 
-def recruiter_email(job: Job, apply_url: str | None, post: str | None) -> str | None:
-    """Where a follow-up can go, when it's clear: a mailto apply link, or an address in the
-    job's own post that looks like HR or careers, or is on the company's own domain."""
-    if apply_url and apply_url.lower().startswith("mailto:"):
-        found = _EMAIL.search(apply_url)
-        return str(found.group(0)) if found else None
-    company = re.sub(r"[^a-z0-9]", "", (job.company or "").casefold())
-    for address in dict.fromkeys(str(a) for a in _EMAIL.findall(post or "")):
-        local, _, domain = address.partition("@")
-        if domain.casefold() in ("gmail.com", "yahoo.com", "outlook.com", "hotmail.com"):
-            continue
-        squashed = re.sub(r"[^a-z0-9]", "", domain.casefold())
-        if _HR_WORDS.search(local) or (len(company) >= 3 and company in squashed):
-            return address
-    return None
-
-
 # ---- reading the mailbox ------------------------------------------------------------------
-
-
-class InboxScanner(Protocol):
-    """Something else that reads the inbox while JobRadar is logged in (company replies)."""
-
-    def scan(self, imap: imaplib.IMAP4_SSL) -> list[str]: ...
 
 
 @dataclass
@@ -233,7 +196,6 @@ class Incoming:
     sender: str
     subject: str
     auth_results: str
-    sent: datetime | None
 
 
 def fetch(settings: Settings, since: date) -> tuple[imaplib.IMAP4_SSL, list[Incoming]]:
@@ -266,13 +228,9 @@ def fetch(settings: Settings, since: date) -> tuple[imaplib.IMAP4_SSL, list[Inco
         )  # fmt: skip
         raw = next((p[1] for p in parts if isinstance(p, tuple)), b"")
         msg = email.message_from_bytes(raw, policy=default_policy)
-        try:
-            sent = parsedate_to_datetime(str(msg["Date"])) if msg["Date"] else None
-        except (TypeError, ValueError):
-            sent = None
         found.append(
             Incoming(uid, str(msg["Message-ID"] or uid), str(msg["From"] or ""),
-                     str(msg["Subject"] or ""), str(msg["Authentication-Results"] or ""), sent)
+                     str(msg["Subject"] or ""), str(msg["Authentication-Results"] or ""))
         )  # fmt: skip
     return imap, found
 
@@ -319,15 +277,12 @@ class ReplyReader:
         queue: TaskQueue,
         actions: Actions,
         clock: Clock = utcnow,
-        companies: InboxScanner | None = None,
     ) -> None:
         self.settings = settings
         self.repo = repo
         self.queue = queue
         self.actions = actions
         self.clock = clock
-        self.tz = settings.config.notify.tz
-        self.companies = companies  # replies from companies you applied to (same login)
         self.ignored: list[tuple[Job, str]] = []  # buttons that couldn't apply, this check
         self.preview_dir: Path | None = None  # dry run: where the "ignored" email is saved
 
@@ -367,11 +322,6 @@ class ReplyReader:
                 done.append(outcome)
             if handled:
                 archive(imap, handled)
-            if self.companies is not None:
-                try:
-                    done += self.companies.scan(imap)
-                except (OSError, imaplib.IMAP4.error) as e:  # the buttons still count
-                    log.warning("company replies not read this time", extra={"error": str(e)})
         finally:
             with contextlib.suppress(imaplib.IMAP4.error, OSError):
                 imap.logout()
@@ -409,8 +359,7 @@ class ReplyReader:
         if job is None:
             return f"{action}: job {prefix} not found"
         title = _title(job)
-        day = (mail.sent or self.clock()).astimezone(self.tz).date()
-        outcome = rules.act(self.repo, self.queue, job, action, day, build_resumes=False)
+        outcome = rules.act(self.repo, self.queue, job, action)
         if not outcome.ok:
             about = {"job_id": job.id[:10], "action": action, "status": job.status}
             log.info("button email ignored: status has moved on", extra=about)

@@ -4,11 +4,11 @@ _Oct 7, 2026_
 
 ## Overview
 
-JobRadar is an open-source, self-hosted agent that watches job channels, extracts every posting (free rules first, an LLM only for what they miss), judges how well each job fits the user's profile with **Jev**, TypeSafe's calibrated decision model, emails the user only about strong and certain matches, generates a tailored LaTeX resume, and lays everything out in a Notion dashboard so the user can apply in minutes.
+JobRadar is an open-source, self-hosted agent that watches job channels, extracts every posting (free rules first, an LLM only for what they miss), judges how well each job fits the user's profile with **Jev**, TypeSafe's calibrated decision model, emails the user only about strong and certain matches, and lays everything out in a Notion dashboard so the user can apply in minutes.
 
-**Problem.** Job seekers in India (especially freshers) follow 10–50 Telegram and WhatsApp groups that post hundreds of links a day. Most are duplicates, irrelevant, or scams. Good postings get missed, deadlines pass, and each application needs a resume tweak and the same form answers typed again.
+**Problem.** Job seekers in India (especially freshers) follow 10–50 Telegram and WhatsApp groups that post hundreds of links a day. Most are duplicates, irrelevant, or scams. Good postings get missed, deadlines pass, and the same form answers are typed again for every application.
 
-**Vision.** One inbox for every job posted in any group the user follows: deduplicated, filtered, ranked, and ready to apply with a tailored resume and pre-written answers. The human always reviews and clicks Submit.
+**Vision.** One inbox for every job posted in any group the user follows: deduplicated, filtered, ranked, and ready to apply. The human always reviews and clicks Submit.
 
 **Name:** JobRadar. **License:** MIT.
 
@@ -20,9 +20,7 @@ JobRadar is an open-source, self-hosted agent that watches job channels, extract
 2. Collapse duplicates so one job appears once, however many groups post it.
 3. Rank jobs by fit with the user's profile and hide clear mismatches and scams.
 4. Show every job in a Notion database with status, deadline and score.
-5. Generate a one-page, tailored LaTeX resume per job, only from facts in the user's profile.
-6. Pre-write answers for each application form field so applying takes under 5 minutes.
-7. Be easy for anyone to self-host: one config, bring-your-own keys, Docker.
+5. Be easy for anyone to self-host: one config, bring-your-own keys, Docker.
 
 ### Non-goals
 
@@ -36,7 +34,7 @@ JobRadar is an open-source, self-hosted agent that watches job channels, extract
 
 | Persona | Situation | What they need most |
 |---|---|---|
-| Fresher (primary) | Final-year or recent graduate, follows 20+ job/off-campus channels, applies to 10–30 jobs a week | Filtering by batch year and degree, deadlines, quick tailored resume |
+| Fresher (primary) | Final-year or recent graduate, follows 20+ job/off-campus channels, applies to 10–30 jobs a week | Filtering by batch year and degree, deadlines, a shortlist you can scan fast |
 | Early-career switcher | 1–3 years of experience, looking for better roles | High match-score filtering, tailored bullets per role |
 | Self-hoster / contributor | Developer who runs it for themselves and adds features | Clean modules, plugin points, good docs, Docker setup |
 | Placement cell / mentor (later) | Shares relevant jobs with a group of students | Read-only shared Notion view (out of scope for v1) |
@@ -50,11 +48,8 @@ JobRadar is an open-source, self-hosted agent that watches job channels, extract
 | US-03 | job seeker | see role, company, eligibility, location, salary and deadline extracted | I can judge a job without opening the link | P0 |
 | US-04 | job seeker | sort jobs by a match score against my profile, with a one-line reason (skills I have and miss, eligibility, location) | I apply to the best fits first and know why | P0 |
 | US-05 | job seeker | have mismatches (wrong batch, degree, location) and likely scams hidden | my inbox stays clean | P1 |
-| US-06 | job seeker | get a tailored resume automatically for strong matches, and on demand when I set a job to Shortlisted | the best jobs are ready to apply to without waiting, and I can still pick any job by hand | P0 |
-| US-07 | job seeker | copy pre-written answers for each form field from the job page | filling the form takes minutes | P1 |
 | US-08 | job seeker | get an email alert only when a job is a strong match **and** JobRadar is confident about it, plus closing-deadline reminders and a morning and evening digest | I hear about what matters without noise or false alarms | P1 |
-| US-09 | job seeker | store each resume locally and in Google Drive, linked from Notion | I have a record of what I sent and can open it from my phone | P1 |
-| US-10 | job seeker | track status from New to Offer | I know where every application stands | P0 |
+| US-10 | job seeker | mark a job as Shortlisted or Skipped, from the dashboard or an email button | I know which jobs I still want | P0 |
 | US-11 | self-hoster | choose my providers: Jev (TypeSafe) for matching, Gemini or Groq for fallback extraction, or rules only | I control cost, privacy and vendor dependence | P1 |
 | US-15 | job seeker | change my profile or how much skills vs. role vs. location matter, and see scores update | my inbox reflects what I want now, without re-running everything | P1 |
 | US-12 | self-hoster | start everything with one Docker command | setup takes under 15 minutes | P1 |
@@ -97,25 +92,12 @@ JobRadar is an open-source, self-hosted agent that watches job channels, extract
 - **FR-4.5** Matching runs behind a provider interface: Jev first, then an LLM, then a skills-overlap rule. Only Jev and LLM results can trigger email; a job that could not be matched is never emailed.
 - **FR-4.6** Re-score open jobs when the profile changes; suggest (never apply) an alert threshold from the jobs the user marks Shortlisted or Skipped.
 
-### FR-5 Resume generation
+### FR-5 Storage and dashboard
 
-- **FR-5.1** Generate automatically when the match score is at or above a configurable threshold (`scoring.auto_resume_above`, default 85), and also when the user sets Status to Shortlisted on a job that has no resume yet.
-- **FR-5.2** Select and rephrase content only from the user's profile file; never add unlisted skills or projects.
-- **FR-5.3** Render a LaTeX template and compile to a one-page PDF.
-- **FR-5.4** Validate: compiles, one page, every skill exists in the profile.
+- **FR-5.1** Create or update one Notion page per job with properties and a page body (requirements, skills, source messages).
+- **FR-5.2** Read Status changes back from Notion to trigger actions.
 
-### FR-6 Application kit
-
-- **FR-6.1** Pre-write answers for each detected form field and common questions (why this company, notice period, expected CTC).
-- **FR-6.2** Write a short cover letter when requested.
-
-### FR-7 Storage and dashboard
-
-- **FR-7.1** Save PDFs locally and upload them to Google Drive.
-- **FR-7.2** Create or update one Notion page per job with properties and a page body (requirements, answers, resume link). The resume is linked by its online Drive URL, not attached as a file.
-- **FR-7.3** Read Status changes back from Notion to trigger actions.
-
-### FR-8 Notifications
+### FR-6 Notifications
 
 - **FR-8.1** Email alert when a job's match score is at or above the alert threshold **and** the match is confident **and** the job is eligible and not a high scam risk; at most one alert per job, ever. Alerts within 10 minutes are batched into one email, with a daily cap. Shortlisted jobs closing within 24 hours get a reminder.
 - **FR-8.2** Morning and evening digest email with counts and a link to the Notion view.
@@ -146,7 +128,7 @@ The dashboard is a public Notion template that each user duplicates; JobRadar wr
 | Role | Title | Agent |
 | Company | Rich text | Agent |
 | Match Score | Number (0–100) | Agent |
-| Status | Select: New, Shortlisted, Applied, Interview, Offer, Rejected, Skipped, Hidden | Agent sets New/Hidden; user changes the rest |
+| Status | Select: New, Shortlisted, Skipped, Hidden | Agent sets New/Hidden; user changes the rest |
 | Deadline | Date | Agent |
 | Location | Rich text | Agent |
 | Work Mode | Select: Onsite, Hybrid, Remote | Agent |
@@ -154,21 +136,18 @@ The dashboard is a public Notion template that each user duplicates; JobRadar wr
 | Skills | Multi-select | Agent |
 | Salary | Rich text | Agent |
 | Apply Link | URL | Agent |
-| Resume | URL (Google Drive link) | Agent |
 | Seen In | Number of groups that posted it | Agent |
 | Scam Risk | Select: Low, Medium, High | Agent |
 | Job ID | Rich text (internal hash) | Agent |
 | Added | Created time | Notion |
 
-**Page body (per job):** match reason, full requirements, eligibility, form answers in copyable code blocks, cover letter, source messages.
+**Page body (per job):** match reason, full requirements, eligibility, source messages.
 
 ### Views shipped in the template
 
 - **Inbox:** Status = New, sorted by Match Score.
 - **Top matches:** Score ≥ 80.
-- **Closing soon:** Deadline within 3 days and Status not Applied.
-- **Board:** Kanban grouped by Status.
-- **Applied:** tracker with dates.
+- **Closing soon:** Deadline within 3 days and Status is New or Shortlisted.
 
 ## Success metrics
 
@@ -178,8 +157,7 @@ The dashboard is a public Notion template that each user duplicates; JobRadar wr
 | Extraction accuracy (role, company, deadline correct) | Over 90% on a 100-job labelled sample |
 | Relevant jobs missed vs manual scan | Under 5% |
 | Time from opening a shortlisted job to submitting | Under 5 minutes |
-| Resume hallucination rate (skill not in profile) | 0% (blocked by validator) |
-| Email alerts the user would act on (marked Shortlisted or Applied) | Over 80% |
+| Email alerts the user would act on (marked Shortlisted) | Over 80% |
 | Fields filled without an LLM call | Measured on the labelled set; target set after the first measurement |
 | Setup time for a new user | Under 15 minutes with Docker |
 | Open-source traction (6 months after launch) | 500 GitHub stars, 10 outside contributors |
@@ -194,10 +172,8 @@ flowchart TB
     R2A["<b>v0.2 A · Read jobs · week 3</b> ✓<br/>Page fetching, LLM extraction to JSON, Notion columns"]
     R2B["<b>v0.2 B · Match and alert · weeks 4–5</b><br/>Free extraction layers, Jev matching with confidence, decide step, email alerts<br/><i>Exit: over 90% extraction accuracy on 100 labelled jobs; alerts you would act on</i>"]
     R2C["<b>v0.2 C · Text-only posts</b><br/>Posts without links, poster OCR, reposts with different links"]
-    R3["<b>v0.3 Resume · weeks 5–6</b><br/>profile.yaml, LaTeX templates, Tectonic compile, validator, Drive upload, auto-threshold + Shortlisted triggers<br/><i>Exit: one-page PDF and zero unknown skills across 50 jobs</i>"]
-    R4["<b>v0.4 Apply kit · week 8</b><br/>Form-answer drafts, cover letter, forward-to-add by email<br/><i>Exit: shortlisted job to submitted form in under 5 minutes</i>"]
-    R5["<b>v1.0 Public open-source launch · week 8</b><br/>Docker image, Notion template, docs, CI, MIT license; WhatsApp source as experimental<br/><i>Exit: a new user is running it in under 15 minutes</i>"]
-    R1 --> R2A --> R2B --> R2C --> R3 --> R4 --> R5
+    R3["<b>v1.0 Public open-source launch · week 8</b><br/>Docker image, Notion template, docs, CI, MIT license; WhatsApp source as experimental<br/><i>Exit: a new user is running it in under 15 minutes</i>"]
+    R1 --> R2A --> R2B --> R2C --> R3
     style R1 fill:#dcf1e4,stroke:#23774a,color:#111
     style R2A fill:#dcf1e4,stroke:#23774a,color:#111
     style R2B fill:#e3eefc,stroke:#3b82f6,color:#111
@@ -214,8 +190,7 @@ v0.1 is useful on its own: it solves the "too many groups to watch" problem befo
 | Alert emails land in spam or flood the inbox | Missed top matches | Send from the user's own account to themselves; batch alerts; `List-Id` header for a filter/label |
 | Email app password leaks | Mailbox access | App password only in `.env`; revocable per app; JobRadar reads one folder and never deletes mail |
 | Job sites change layout or block scraping | Missing details | Fall back to message text; generic extractor first, site adapters second |
-| LLM invents resume content | User sends false claims | Profile-only generation + validator that rejects unknown skills; user reviews every PDF |
-| LLM cost grows with volume (auto-generated resumes add to it) | Users stop running it | Cheap model for extraction; resumes only above the auto threshold or on Shortlisted; daily budget cap; cache by job ID |
+| LLM cost grows with volume | Users stop running it | Cheap model for extraction; the LLM only when free rules miss; daily budget cap; cache by job ID |
 | Notion rate limits (about 3 req/s) and 2,000-character text blocks | Slow or failed writes | Write queue with backoff; split long text into blocks |
 | Scam jobs reach the user | Financial harm | Scam heuristics + Scam Risk property; never hide the flag; high-risk jobs are never emailed |
 | Jev is early access, proprietary and its price may be subsidised | Matching breaks or gets expensive | Provider interface with LLM and rule fallbacks; no email when matching fails; Jev optional |
@@ -231,12 +206,9 @@ v0.1 is useful on its own: it solves the "too many groups to watch" problem befo
 | Question | Decision |
 |---|---|
 | License | **MIT** (maximum adoption) |
-| Default LLM | **Gemini** (default) or **Groq** via LiteLLM: Gemini flash-lite for fallback extraction, a stronger Gemini model for resumes and answers. Matching uses Jev, with the LLM as its fallback |
-| Resume trigger | **Auto-generate at or above `auto_resume_above`** (default 85); Shortlisted still triggers a build for jobs below it |
-| Resume in Notion | **Online link** (Google Drive `webViewLink`), not a file attachment |
+| Default LLM | **Gemini** (default) or **Groq** via LiteLLM: Gemini flash-lite for fallback extraction, a stronger Gemini model for job summaries. Matching uses Jev, with the LLM as its fallback |
 | Project name | **JobRadar**; PyPI package **`jobradar-agent`** (CLI and import stay `jobradar`) |
 | Notifications | **Email** (SMTP) instead of a Telegram bot; manual adds by forwarding to an email folder. Telegram remains the job source |
 | Matching | **Jev** (TypeSafe System One model): typed Choice / Score / yes-no answers with calibrated confidence, composite scoring in code. Gemini and a skills rule as fallbacks |
 | Extraction | **Free rules first** (structured data, post labels, candidate rules with Jev selection); LLM only when role or company is missing |
 | Local model | **Not in v1.** Gemini/Groq free tiers cover normal use and the 1 GB target host cannot run one; Ollama support is a post-v1 idea |
-| Google Drive | **Required for resumes**, so the Notion Resume link always opens on any device |

@@ -23,7 +23,6 @@ from sqlmodel import Session, SQLModel, col, create_engine, func, select
 from jobradar.clock import Clock, to_iso, utcnow
 from jobradar.db import models  # also registers every table on SQLModel.metadata
 from jobradar.db.models import (
-    Artifact,
     FeedBoard,
     FetchedPage,
     Job,
@@ -58,6 +57,31 @@ def init_db(engine: Engine) -> None:
     SQLModel.metadata.create_all(engine)
     _add_new_columns(engine)
     _refresh_source_platforms(engine)
+    _migrate_legacy_statuses(engine)
+
+
+# Statuses of the application funnel that JobRadar no longer has. Jobs that still carry one
+# keep it in the history table, but the status itself becomes Shortlisted (you went for it)
+# or Skipped (the company turned you down).
+LEGACY_STATUSES: dict[str, str] = {
+    "resume_ready": JobStatus.SHORTLISTED.value,
+    "applied": JobStatus.SHORTLISTED.value,
+    "interview": JobStatus.SHORTLISTED.value,
+    "offer": JobStatus.SHORTLISTED.value,
+    "rejected": JobStatus.SKIPPED.value,
+}
+
+
+def _migrate_legacy_statuses(engine: Engine) -> None:
+    """Jobs left with an application status (Applied, Interview, Offer, Rejected,
+    Resume ready) become Shortlisted or Skipped, so nothing reads a status that no longer
+    exists. Runs once; later runs find nothing to change."""
+    with engine.begin() as c:
+        for old, new in LEGACY_STATUSES.items():
+            c.execute(
+                text("UPDATE job SET status = :new WHERE status = :old"),
+                {"new": new, "old": old},
+            )
 
 
 def _refresh_source_platforms(engine: Engine) -> None:
@@ -341,41 +365,6 @@ class Repo:
                 ),
                 {"id": job_id, "status": status.value, "reason": reason, "now": self._now()},
             )
-
-    def latest_artifact(self, job_id: str, kind: str = "resume") -> Artifact | None:
-        with Session(self.engine) as s:
-            query = (
-                select(Artifact)
-                .where(Artifact.job_id == job_id, Artifact.kind == kind)
-                .order_by(col(Artifact.version).desc())
-            )
-            return s.exec(query).first()
-
-    def next_version(self, job_id: str, kind: str = "resume") -> int:
-        latest = self.latest_artifact(job_id, kind)
-        return latest.version + 1 if latest else 1
-
-    def save_artifact(
-        self, job_id: str, kind: str, version: int, local_path: str, content_json: str
-    ) -> Artifact:
-        """One version of this job's resume (or kit)."""
-        artifact = Artifact(
-            job_id=job_id, kind=kind, version=version, local_path=local_path,
-            content_json=content_json, created_at=self._now(),
-        )  # fmt: skip
-        with Session(self.engine) as s:
-            s.add(artifact)
-            s.commit()
-            s.refresh(artifact)
-        return artifact
-
-    def artifacts_since(self, since: str, kind: str = "resume") -> int:
-        with self._tx() as c:
-            row = c.execute(
-                text("SELECT COUNT(*) FROM artifact WHERE kind = :k AND created_at >= :since"),
-                {"k": kind, "since": since},
-            ).first()
-        return int(row[0]) if row else 0
 
     def jobs_with_prefix(self, prefix: str) -> list[str]:
         """Ids of jobs starting with this (at most a few)."""
@@ -898,32 +887,6 @@ class Repo:
                 query = query.where(col(Job.created_at) < until)
             return list(s.exec(query))
 
-    def jobs_you_moved_to(self, statuses: list[JobStatus]) -> list[Job]:
-        """Jobs whose Status you set to one of these, most recent change first."""
-        with Session(self.engine) as s:
-            query = (
-                select(Job)
-                .where(
-                    col(Job.status).in_([st.value for st in statuses]),
-                    col(Job.user_status_at).is_not(None),
-                )
-                .order_by(col(Job.user_status_at).desc())
-            )
-            return list(s.exec(query))
-
-    def jobs_applied(self) -> list[Job]:
-        """Jobs whose Status you set to Applied (and nothing since), oldest first."""
-        with Session(self.engine) as s:
-            query = (
-                select(Job)
-                .where(
-                    col(Job.status) == JobStatus.APPLIED.value,
-                    col(Job.user_status_at).is_not(None),
-                )
-                .order_by(col(Job.user_status_at))
-            )
-            return list(s.exec(query))
-
     # ---- the dashboard's reads ------------------------------------------------------------
 
     def good_new_jobs(self, min_score: int, since: str) -> list[Job]:
@@ -1150,83 +1113,6 @@ class Repo:
             ).one()
         return int(row[0])
 
-    def jobs_ever_in(self, statuses: list[JobStatus], undo_minutes: int = 0) -> int:
-        """Jobs that are, or once were, in one of these statuses (by your status history).
-        A status you changed again within `undo_minutes` is taken as a misclick."""
-        query = text(
-            """
-            WITH h AS (
-                SELECT job_id, status, changed_at,
-                       LEAD(changed_at) OVER (PARTITION BY job_id ORDER BY changed_at, id)
-                           AS next_at
-                FROM status_change
-            )
-            SELECT count(*) FROM (
-                SELECT id FROM job WHERE status IN :sts
-                UNION SELECT job_id FROM h WHERE status IN :sts AND (
-                    next_at IS NULL
-                    OR (julianday(next_at) - julianday(changed_at)) * 1440 >= :undo)
-            )
-            """
-        ).bindparams(bindparam("sts", expanding=True))
-        with self._tx() as c:
-            row = c.execute(
-                query, {"sts": [st.value for st in statuses], "undo": undo_minutes}
-            ).one()
-        return int(row[0])
-
-    def applications_by_source(
-        self, undo_minutes: int = 10
-    ) -> list[tuple[str, str, str, str, bool, bool]]:
-        """(platform, source name, job id, its status now, reached the next round, found there
-        first) for every job you applied to, once per source that carried it, newest find first.
-
-        Applied means Applied or any later status in your history; the next round means Interview
-        or Offer. A status changed again within `undo_minutes` is taken as a misclick and ignored,
-        so Interview undone 8 seconds later isn't an interview."""
-        query = text(
-            """
-            WITH h AS (
-                SELECT job_id, status, changed_at,
-                       LEAD(changed_at) OVER (PARTITION BY job_id ORDER BY changed_at, id)
-                           AS next_at
-                FROM status_change
-            ),
-            kept AS (
-                SELECT job_id, status FROM h
-                WHERE next_at IS NULL
-                   OR (julianday(next_at) - julianday(changed_at)) * 1440 >= :undo
-            ),
-            outcome AS (
-                SELECT job_id, MAX(status IN ('interview', 'offer')) AS next_round
-                FROM kept WHERE status IN ('applied', 'interview', 'offer', 'rejected')
-                GROUP BY job_id
-            ),
-            per_source AS (  -- one row per job and source: a repost can't count twice
-                SELECT m.source_id, o.job_id, o.next_round, MIN(m.received_at) AS seen
-                FROM outcome o
-                JOIN job_source js ON js.job_id = o.job_id
-                JOIN raw_message m ON m.id = js.raw_message_id
-                GROUP BY m.source_id, o.job_id
-            ),
-            first AS (SELECT job_id, MIN(seen) AS seen FROM per_source GROUP BY job_id)
-            SELECT s.platform, coalesce(s.title, s.chat_id), p.job_id, j.status, p.next_round,
-                   p.seen = f.seen
-            FROM per_source p
-            JOIN source s ON s.id = p.source_id
-            JOIN job j ON j.id = p.job_id
-            JOIN first f ON f.job_id = p.job_id
-            ORDER BY p.seen DESC
-            """
-        )
-        with self._tx() as c:
-            rows = c.execute(query, {"undo": undo_minutes}).all()
-        return [(str(r[0]), str(r[1]), str(r[2]), str(r[3]), bool(r[4]), bool(r[5])) for r in rows]
-
-    def get_artifact(self, artifact_id: int) -> Artifact | None:
-        with Session(self.engine) as s:
-            return s.get(Artifact, artifact_id)
-
     def task_waiting(self, task_type: str, key: str) -> bool:
         """A task of this type and key is queued or running."""
         with self._tx() as c:
@@ -1251,19 +1137,9 @@ class Repo:
             ).all()
         return [(str(r[0]), str(r[1])) for r in rows]
 
-    def artifacts_of(self, job_id: str) -> list[Artifact]:
-        """Every resume and cover letter built for this job, newest first."""
-        with Session(self.engine) as s:
-            query = (
-                select(Artifact)
-                .where(Artifact.job_id == job_id)
-                .order_by(col(Artifact.created_at).desc(), col(Artifact.id).desc())
-            )
-            return list(s.exec(query))
-
     def jobs_closing(self, first_day: str, last_day: str) -> list[Job]:
         """Jobs you may still apply to whose deadline falls in these days (inclusive)."""
-        open_ = [JobStatus.NEW.value, JobStatus.SHORTLISTED.value, JobStatus.RESUME_READY.value]
+        open_ = [JobStatus.NEW.value, JobStatus.SHORTLISTED.value]
         with Session(self.engine) as s:
             query = (
                 select(Job)

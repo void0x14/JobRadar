@@ -2,7 +2,7 @@
 
 Read this first. It says what JobRadar is, where the work stands, the conventions to follow, the
 decisions already made (don't reopen them without the owner), and what comes next.
-Last updated: 2026-10-24.
+Last updated: 2026-11-01.
 
 ## 1. What this is
 
@@ -17,14 +17,14 @@ roles. It:
    (Gemini or Groq via LiteLLM) only when needed, merges duplicates, hides ads and scams.
 3. **Scores them** against `config/profile.yaml` (Match Score 0-100, eligibility: batch years,
    branch, experience).
-4. **Acts**: emails strong matches within minutes, sends a morning and evening digest, reminders for
-   closing jobs, follow-up drafts, and reads company replies. Emails have "I applied" /
-   "Not interested" buttons.
-5. **Builds a one-page LaTeX resume** per job, using only facts from `profile.yaml`.
-6. **Shows everything on a local dashboard** (FastAPI + Jinja, http://127.0.0.1:8080), optionally
+4. **Acts**: emails strong matches within minutes, sends a morning and evening digest, and
+   reminds you when a job you shortlisted closes. Emails have "Shortlist" / "Not interested"
+   buttons.
+5. **Shows everything on a local dashboard** (FastAPI + Jinja, http://127.0.0.1:8080), optionally
    mirrored to Notion.
 
-JobRadar never applies for the user. The user reviews and submits every application.
+JobRadar never applies for the user, and it doesn't write resumes: it finds and ranks jobs,
+then tells the user about them. The user reviews and submits every application.
 
 ## 2. Where we are (status)
 
@@ -33,11 +33,8 @@ JobRadar never applies for the user. The user reviews and submits every applicat
 | v0.1 Ingest | Telegram, links, dedupe, ads, SQLite queue, Notion rows | done |
 | v0.2 Read and match | page reading, free extraction, Match Score, decide, scams, email alerts, digest | done |
 | v0.2.5 Statuses and feeds | Notion/email statuses, company boards, still-open check, reminders | done |
-| v0.3 Resume | profile.yaml, LaTeX templates, grounding checker, ATS check, auto + Shortlisted triggers | done |
-| v0.4 Apply kit | form answers, cover letter, forward-to-add, follow-ups, company replies | done |
-| v0.5 Dashboard | Today, Applications board, All jobs (full-text search), Skills (what jobs really want), Digest, job pages with resumes; interviews by source; phone via Tailscale; Notion and Telegram optional | done (PRs #68-#93) |
+| v0.5 Dashboard | Today, All jobs (full-text search), Skills (what jobs really want), Digest, job pages; phone via Tailscale; Notion and Telegram optional | done (PRs #68-#93) |
 | Matching with Jev | TypeSafe's Jev answers match questions with calibrated confidence, beside Gemini first | **next**, waiting for the owner's TypeSafe key |
-| Resume review panel | designed, see section 7 | planned |
 | v1.0 Public release | Docker image, PyPI `jobradar-agent`, setup guide, WhatsApp experimental | planned |
 
 Open decision: after a week of using the dashboard (around 2026-10-29) the owner decides whether
@@ -55,7 +52,7 @@ sources (boards, pages, Telegram, email)
   -> extract: structured data, rules first, LLM fallback                      (pipeline/extract.py)
   -> match + score against profile.yaml, eligibility                          (pipeline/match.py, score.py)
   -> decide: hide / unsure / alert, scam check                                (pipeline/decide.py, scam.py)
-  -> sinks: email alert, digest, reminders, Notion; resume build              (sinks/, resume/)
+  -> sinks: email alert, digest, reminders, Notion                            (sinks/)
 dashboard reads the same SQLite database                                      (web/)
 ```
 
@@ -64,19 +61,17 @@ Everything runs as tasks on a durable SQLite-backed queue (`queue/`), so a resta
 
 ## 4. Code map (`src/jobradar`)
 
-- `__main__.py`: the `jobradar` CLI (run, web, add, boards, resume, digest, skills, sources, stats, ...)
+- `__main__.py`: the `jobradar` CLI (run, web, add, boards, digest, skills, replies, stats, ...)
 - `app.py`: wiring for `jobradar run` (pipeline, worker, schedules, dashboard)
 - `config.py`: `config/config.yaml` + `.env`, validated with pydantic; fails fast with clear messages
 - `db/repo.py`: **every SQL query lives here**; `db/models.py` the SQLModel tables
 - `sources/`: Telegram, `boards/` (one reader per hiring system), `pages/`, email forward
 - `pipeline/`: ingest -> extract -> match -> decide; `status_rules.py` (what a status change may do,
   shared by email buttons and the dashboard); `skill_gaps.py` + `skill_detail.py` (Skills page)
-- `sinks/`: email alerts, digest, reminders, follow-ups, company replies, email buttons, Notion
-- `resume/`: tailor, LaTeX render, grounding check, page fitting, ATS check
+- `sinks/`: email alerts, digest, reminders, email buttons, Notion
 - `web/`: `app.py` (routes, security), `views.py` (page data), `search.py` (FTS5),
   `templates/` (Jinja), `static/app.css` + `app.js`
-- `by_source.py`: applications and next rounds per source
-- `tests/`: pytest, about 680 tests, fakes in `tests/fakes.py`
+- `tests/`: pytest, about 580 tests, fakes in `tests/fakes.py`
 
 ## 5. Conventions
 
@@ -112,15 +107,13 @@ Everything runs as tasks on a durable SQLite-backed queue (`queue/`), so a resta
   providers no name, email or phone.
 - JobRadar never applies, never messages recruiters, never posts on Telegram.
 
-**Resume rules** (from the owner)
-- Exactly one page. No em dashes anywhere.
-- Every fact comes from `profile.yaml`: never invent skills, tools, numbers or achievements; verify
-  any metric against code, tests or the database first. Experiences with `on_resume: false` never
-  show.
+**Rules** (from the owner)
+- No em dashes anywhere in what JobRadar writes.
 - JobRadar is the primary project for Backend / SWE roles.
 
 **Data rules**
 - A status changed back within 10 minutes is a misclick and isn't counted anywhere.
+- The statuses are New, Shortlisted, Skipped and Hidden. The old application stages (Applied, Interview, Offer, Rejected, Resume ready) are gone: a job that still carries one becomes Shortlisted or Skipped when the database is opened.
 - Quick actions (buttons) only move a job forward; "Change status" can set anything.
 - A missing skill counts only jobs that need it: "Python, Java or C++" doesn't count against C++
   when the user has Python.
@@ -143,7 +136,6 @@ Everything runs as tasks on a durable SQLite-backed queue (`queue/`), so a resta
 - Notifications by email (SMTP), not a Telegram bot. Telegram is a job source only.
 - Owner's filters: batch years 2025-2026, anywhere in India plus remote, `branch_strict: true`
   (CSE/IT-only posts are hidden), alert at score 75.
-- Resumes are local PDFs (no Google Drive for now), built from the owner's LaTeX layout.
 - Dashboard: server-rendered Jinja pages with one small vanilla `app.js` (no Node build, so the
   PyPI package ships everything); React only if it outgrows that.
 - Jev (TypeSafe) will judge matches behind a swappable provider interface, beside Gemini first;
@@ -153,16 +145,10 @@ Everything runs as tasks on a durable SQLite-backed queue (`queue/`), so a resta
 
 1. **Jev matching** (needs the owner's TypeSafe key): run Jev beside the current matcher, compare,
    then switch. Read the live docs at https://docs.typesafe.ai/llms.txt first.
-2. **Resume review panel** (designed, not built): on a click on a job page, code pre-checks run
-   (keyword gap, ATS check, one page), then 5 reviewer LLM calls in parallel (recruiter 0.20,
-   tech lead 0.30, ATS/keywords 0.20, devil's advocate 0.15, impact editor 0.15), merged in code.
-   Findings must quote the resume exactly or are dropped. "Apply fixes" re-tailors, re-runs the
-   grounding check (always code, never an LLM), recompiles and re-reviews: at most 2 rounds, stop
-   when there are no blockers.
-3. **Notion decision** around 2026-10-29.
-4. **More sources**: SuccessFactors readers starting with Wipro's sitemap; finding a company's
+2. **Notion decision** around 2026-10-29.
+3. **More sources**: SuccessFactors readers starting with Wipro's sitemap; finding a company's
    boards from its name.
-5. **v1.0**: Docker image, PyPI release, a setup guide that gets a new user running in under 15
+4. **v1.0**: Docker image, PyPI release, a setup guide that gets a new user running in under 15
    minutes; WhatsApp as an experimental source.
 
 ## 8. Working with the owner

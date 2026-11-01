@@ -384,7 +384,7 @@ async def test_never_joined_to_a_job_you_moved_an_old_one_or_a_hidden_one(
     role = ("Accenture", "Custom Software Engineer")
     first = seed_role(repo, clock, 1, post(*role, "Pune", 1))
     await extract_all(repo, queue, clock, first)
-    repo.set_user_status(first, JobStatus.APPLIED)  # you moved it in Notion
+    repo.set_user_status(first, JobStatus.SHORTLISTED)  # you moved it in Notion
     second = seed_role(repo, clock, 2, post(*role, "Hyderabad", 2))
     await extract_all(repo, queue, clock, second)
     job = repo.get_job(second)

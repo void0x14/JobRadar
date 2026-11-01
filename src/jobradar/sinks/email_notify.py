@@ -104,7 +104,7 @@ def build_email(
     notion: bool = True,
 ) -> EmailMessage:
     """One alert email covering these jobs, as HTML and plain text. `seen` maps a job id to
-    where and when it was posted; `actions` adds the "I applied" / "Not interested" buttons."""
+    where and when it was posted; `actions` adds the "Shortlist" / "Not interested" buttons."""
     seen = seen or {}
     cards = [
         job_card(job, seen.get(job.id, ""), notion_url(job.notion_page_id, notion),

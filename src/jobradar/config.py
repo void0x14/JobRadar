@@ -300,14 +300,11 @@ class FiltersConfig(_Strict):
 class ScoringConfig(_Strict):
     hide_below: Percent = 40
     alert_above: Percent = 75
-    auto_resume_above: Percent | None = 85
 
     @model_validator(mode="after")
     def _ordered(self) -> ScoringConfig:
         if self.alert_above < self.hide_below:
             raise ValueError("alert_above must be >= hide_below")
-        if self.auto_resume_above is not None and self.auto_resume_above < self.hide_below:
-            raise ValueError("auto_resume_above must be >= hide_below (or null)")
         return self
 
 
@@ -354,38 +351,11 @@ class MatchingConfig(_Strict):
         return list(dict.fromkeys(v))
 
 
-class ResumeConfig(_Strict):
-    enabled: bool = True
-    template: str = "classic"  # built in, or a path to your own .tex.j2
-    max_pages: int = Field(default=1, ge=1, le=3)
-    tailor: bool = True  # false: every resume is your profile as written
-    max_per_day: int = Field(
-        default=10, ge=0, le=100
-    )  # automatic builds; Shortlisted always builds
-    # Phrases a tailored resume may never add (they may stay where your profile has them).
-    banned_phrases: list[str] = Field(
-        default_factory=lambda: [
-            "world-class",
-            "expert",
-            "guru",
-            "ninja",
-            "rockstar",
-            "cutting-edge",
-            "passionate",
-            "synergy",
-        ]
-    )
-
-
 class LinksConfig(_Strict):
     # Extra redirect hosts to expand, e.g. a channel's own link shortener.
     extra_shorteners: list[str] = Field(default_factory=list)
     # Never treat as jobs: a host ("ads.example.com") or host/path prefix ("x.com/courses").
     deny: list[str] = Field(default_factory=list)
-
-
-class StorageConfig(_Strict):
-    local_dir: Path = Path("./output")
 
 
 class EmailConfig(_Strict):
@@ -409,19 +379,12 @@ class NotifyConfig(_Strict):
     digest: bool = True  # a summary email at each digest time
     # An email when a job you shortlisted closes today or tomorrow (checked hourly, 8:00-22:00).
     closing_reminders: bool = True
-    # An email with a follow-up draft when a job you set to Applied has had no reply for this
-    # many days (at most 2 per job; set Notion's Followed Up date when you send one).
-    followups: bool = True
-    followup_after_days: int = Field(default=10, ge=3, le=60)
-    # "I applied" / "Not interested" / "I followed up" buttons in emails: you send the ready
-    # email they open, JobRadar reads it over IMAP and updates the job and Notion.
+    # "Shortlist" / "Not interested" buttons in emails: you send the ready email they open,
+    # JobRadar reads it over IMAP and updates the job and Notion.
     email_actions: bool = True
     # Once a week, the digest lists the skills your good matches asked for that your profile
     # doesn't (`jobradar skills` shows them any time).
     skill_gaps: bool = True
-    # Read new mail from companies you applied to (only theirs) and email you a suggested
-    # status: "Rubrik replied: interview invite?" with a one-tap button. Needs email_actions.
-    company_replies: bool = True
     digest_times: list[str] = Field(default_factory=lambda: ["09:00", "19:00"])
     timezone: str = "Asia/Kolkata"
 
@@ -497,9 +460,7 @@ class AppConfig(_Strict):
     filters: FiltersConfig = Field(default_factory=FiltersConfig)
     scoring: ScoringConfig = Field(default_factory=ScoringConfig)
     matching: MatchingConfig = Field(default_factory=MatchingConfig)
-    resume: ResumeConfig = Field(default_factory=ResumeConfig)
     links: LinksConfig = Field(default_factory=LinksConfig)
-    storage: StorageConfig = Field(default_factory=StorageConfig)
     email: EmailConfig = Field(default_factory=EmailConfig)
     notify: NotifyConfig = Field(default_factory=NotifyConfig)
     web: WebConfig = Field(default_factory=WebConfig)
@@ -535,7 +496,6 @@ class Secrets(BaseSettings):
     email_address: str | None = None
     email_app_password: SecretStr | None = None
     notify_to: str | None = None
-    gdrive_folder_id: str | None = None
 
     @field_validator("*", mode="before")
     @classmethod
@@ -548,13 +508,12 @@ class Secrets(BaseSettings):
         return self.notify_to or self.email_address
 
 
-Feature = Literal["telegram", "notion", "llm", "email", "gdrive"]
+Feature = Literal["telegram", "notion", "llm", "email"]
 
 _REQUIRED: dict[Feature, tuple[str, ...]] = {
     "telegram": ("tg_api_id", "tg_api_hash"),
     "notion": ("notion_token", "notion_database_id"),
     "email": ("email_address", "email_app_password"),
-    "gdrive": ("gdrive_folder_id",),
 }
 
 _PROVIDER_KEYS = {"gemini": "gemini_api_key", "groq": "groq_api_key"}
