@@ -492,6 +492,7 @@ class Overview:
     today: int  # good matches you haven't acted on
     active: int  # jobs you shortlisted
     jobs: int  # All jobs (not hidden)
+    gigs: int  # short-paid work the finder found
     closing: int  # jobs you may still apply to, closing in the next 2 days
     awake: bool
     last_read: str  # "3 min ago", or ""
@@ -513,6 +514,7 @@ def overview(repo: Repo, min_score: int, now: datetime, tz: ZoneInfo, name: str)
         today=len(repo.good_new_jobs(min_score, since)),
         active=n(JobStatus.SHORTLISTED),
         jobs=n(*SHOW_JOBS),
+        gigs=repo.count_gigs("gig"),
         closing=len(closing),
         awake=awake,
         last_read=ago(last, now),
@@ -1067,4 +1069,93 @@ def skill_detail_page(
         alongside=[(names(k), n, k in d.have_keys) for k, n in det.alongside],
         quotes=quotes,
         missing=key not in d.have_keys,
+    )
+
+
+# ---- the gig finder page -----------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class GigCard:
+    """One gig on the page: what it is, what it pays, where and when."""
+
+    id: str
+    title: str
+    employer: str
+    pay: str
+    place: str
+    when: str
+    source: str
+    url: str
+    confidence: float
+
+
+@dataclass
+class GigsPage:
+    """The gigs page: the newest first, and what they add up to."""
+
+    cards: list[GigCard]
+    total: int
+    last_24h: int
+    by_unit: list[tuple[str, int]]
+
+
+def gig_cards(repo: Repo, tz: ZoneInfo, limit: int = 100) -> list[GigCard]:
+    """The gigs, newest first, as plain data for the page."""
+    cards: list[GigCard] = []
+    for gig in repo.list_gigs(verdict="gig", limit=limit):
+        pay = ""
+        if gig.payment_amount is not None:
+            unit = {
+                "daily": "/gün",
+                "hourly": "/saat",
+                "per_task": "/görev",
+                "per_project": "/proje",
+                "weekly": "/hafta",
+                "monthly": "/ay",
+            }.get(gig.payment_unit, "")
+            money = f"{gig.payment_amount:g} {gig.payment_currency or ''}".strip()
+            pay = f"{money}{unit}".strip()
+        place = " · ".join(p for p in (gig.city, gig.district) if p)
+        if gig.remote_or_onsite == "remote":
+            place = (place + " · uzaktan").strip(" ·")
+        cards.append(
+            GigCard(
+                id=gig.job_id,
+                title=gig.job_title,
+                employer=gig.employer or "",
+                pay=pay,
+                place=place,
+                when=when(gig.publication_date, tz) or when(gig.first_seen, tz),
+                source=gig.source_platform,
+                url=gig.original_url,
+                confidence=gig.confidence_score,
+            )
+        )
+    return cards
+
+
+def gigs_page(repo: Repo, tz: ZoneInfo, limit: int = 100) -> GigsPage:
+    """The gig page: the cards, how many there are, and how they are paid."""
+    cards = gig_cards(repo, tz, limit)
+    since = to_iso(datetime.now(UTC) - timedelta(days=1))
+    recent = repo.list_gigs(verdict="gig", limit=500, since=since)
+    units = Counter(gig.payment_unit for gig in recent)
+    labels = {
+        "daily": "günlük",
+        "hourly": "saatlik",
+        "per_task": "görev başı",
+        "per_project": "proje başı",
+        "weekly": "haftalık",
+        "monthly": "aylık",
+    }
+    by_unit = [
+        (labels.get(unit, unit), count)
+        for unit, count in sorted(units.items(), key=lambda kv: -kv[1])
+    ]
+    return GigsPage(
+        cards=cards,
+        total=repo.count_gigs("gig"),
+        last_24h=len(recent),
+        by_unit=by_unit,
     )

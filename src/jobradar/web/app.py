@@ -300,6 +300,12 @@ def create_app(
         page = views.skills_page(repo, settings, current_profile(), clock(), days)
         return render(request, "skills.html", "skills", s=page)
 
+    @app.get("/gigs", response_class=HTMLResponse)
+    def gigs(request: Request) -> HTMLResponse:
+        """The short-paid work the finder found: daily, hourly, per task, per project."""
+        page = views.gigs_page(repo, tz)
+        return render(request, "gigs.html", "gigs", g=page)
+
     @app.get("/skills/{key}", response_class=HTMLResponse)
     def skill(request: Request, key: str, days: int = 30) -> HTMLResponse:
         page = views.skill_detail_page(repo, settings, current_profile(), clock(), days, key)

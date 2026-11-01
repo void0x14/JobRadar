@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Kısa süreli işler · JobRadar{% endblock %}
+{% block main %}
+<div class="head">
+  <h1>Kısa süreli işler</h1>
+  <p class="lede">Günlük, saatlik, görev başı ve proje başı ödeme yapan işler. Toplam {{ g.total }}, son 24 saatte {{ g.last_24h }}.</p>
+</div>
+
+{% if g.by_unit %}
+<section class="stats" aria-label="Ödeme türü">
+  {% for label, count in g.by_unit %}
+  <div class="stat"><b>{{ count }}</b><span>{{ label }}</span></div>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if g.cards %}
+<ul class="rows">
+  {% for c in g.cards %}
+  <li class="row" data-id="{{ c.id }}">
+    <div class="row-main">
+      <div class="row-top">
+        <a class="row-title" href="{{ c.url }}" target="_blank" rel="noopener noreferrer">{{ c.title }}</a>
+        {% if c.employer %}<p class="meta"><b>{{ c.employer }}</b></p>{% endif %}
+      </div>
+      <p class="meta">
+        {% if c.pay %}<span class="chip">{{ c.pay }}</span>{% endif %}
+        {% if c.place %}<span>{{ c.place }}</span>{% endif %}
+        {% if c.when %}<span class="faint">{{ c.when }}</span>{% endif %}
+        <span class="faint">{{ c.source }}</span>
+      </p>
+    </div>
+    <div class="row-actions">
+      <a class="act" href="{{ c.url }}" target="_blank" rel="noopener" title="İlanı aç"><span>İlanı aç</span></a>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="empty"><p><b>Henüz kısa süreli iş yok.</b> <span class="faint">Tarama yapıldığında burada görünür.</span></p></div>
+{% endif %}
+{% endblock %}

@@ -8,6 +8,7 @@ prose, so the classifier uses it first and falls back to the text.
 from __future__ import annotations
 
 import html as html_lib
+import json
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -90,6 +91,47 @@ def read_posting(html: str) -> Posting | None:
         employment_type=_text(posting.get("employmentType")),
         salary_text=_salary(posting.get("baseSalary")),
     )
+
+
+def read_item_list(html: str) -> dict[str, str]:
+    """The listing page's own index of what it lists: {url: name}.
+
+    A board that serves a schema.org ItemList tells us the title of every ad it shows,
+    which is better than the text of the link to it ("Apply now", "Skip to content").
+    """
+    out: dict[str, str] = {}
+    for block in re.findall(
+        r"<script[^>]+type=['\"]application/ld\+json['\"][^>]*>(.*?)</script>", html, re.S | re.I
+    ):
+        try:
+            data = json.loads(html_lib.unescape(block.strip()))
+        except ValueError:
+            continue
+        items = data.get("itemListElement") if isinstance(data, dict) else None
+        main = data.get("mainEntity") if isinstance(data, dict) else None
+        if isinstance(main, dict) and isinstance(main.get("itemListElement"), list):
+            items = main["itemListElement"]
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            url, name = _text(item.get("url")), _text(item.get("name"))
+            if url and name:
+                out[url.rstrip("/")] = name
+    return out
+
+
+def page_title(html: str) -> str | None:
+    """The page's own title: the og:title, or the title tag without the site name."""
+    found = re.search(
+        r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)', html, re.I
+    )
+    if not found:
+        found = re.search(r"<title[^>]*>(.*?)</title>", html, re.I | re.S)
+    if not found:
+        return None
+    text = _TAG.sub(" ", html_lib.unescape(found.group(1)))
+    text = " ".join(text.split()).strip(" |-\u2013")
+    return text or None
 
 
 def _salary(value: Any) -> str | None:

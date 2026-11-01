@@ -9,7 +9,7 @@ ONEFORMA = LinkAdapter(
     name="OneForma (open projects)",
     platform="oneforma",
     list_urls=["https://www.oneforma.com/projects/"],
-    pattern=r"oneforma\.com/projects/[^/]+/",
+    pattern=r"oneforma\.com/projects/(?!page/)[^/]+/",
 )
 
 DATAFORCE = LinkAdapter(
@@ -25,7 +25,7 @@ OPENTRAIN = LinkAdapter(
     name="OpenTrain AI (Türkiye jobs)",
     platform="opentrain",
     list_urls=["https://www.opentrain.ai/jobs/country/turkiye/"],
-    pattern=r"opentrain\.ai/jobs/[^/]+/",
+    pattern=r"opentrain\.ai/jobs/(?!country/)[^/]+/",
 )
 
 MINDRIFT = LinkAdapter(

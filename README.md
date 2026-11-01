@@ -48,6 +48,8 @@ what is really short-paid work:
   any) is used before the prose: the date it was posted, who is hiring, where, and the pay.
 - **New gigs are emailed as they appear** (`jobradar gig scan`, or automatically while
   `jobradar run` is up, every `gig.every_minutes`).
+- **They are on the dashboard too**: `/gigs` lists them with what they pay, where they are
+  and when they were posted.
 
 Sources, in the order they were built and checked: Eleman.net, İşin Olsun, Telegram
 (public channel previews), R10, Upwork, DataForce, OneForma, RWS TrainAI, OpenTrain AI,
@@ -61,6 +63,12 @@ second scan find the same ads) and prints what each source can and cannot do. So
 answer a challenge page or a 403 are reported as blocked: nothing is worked around. Facebook
 and WhatsApp groups are not scraped at all; their ads come in through `jobradar gig add`,
 which takes the text you paste or forward.
+
+The rules are strict on purpose. "Günlük raporlama" (daily reporting) and "haftalık
+toplantı" (a weekly meeting) are not wages, and neither is "günlük 3 kişi": only a payment
+model with the money next to it counts. An ad that says "tam zamanlı" is out even when it
+also says "günlük", unless it states a daily pay. When the board's own data says what the ad
+is (its schema.org JobPosting or ItemList), that is used before the prose.
 
 ## How it works
 

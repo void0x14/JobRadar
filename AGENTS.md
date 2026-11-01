@@ -75,7 +75,7 @@ Everything runs as tasks on a durable SQLite-backed queue (`queue/`), so a resta
 - `gig/`: the Türkiye gig finder: `adapters/` (one per source), `classify.py` (the payment model
   rules), `scan.py`, `notify.py`, `validate.py` (the nine source checks), `watcher.py`
 - `web/`: `app.py` (routes, security), `views.py` (page data), `search.py` (FTS5),
-  `templates/` (Jinja), `static/app.css` + `app.js`
+  `templates/` (Jinja), `static/app.css` + `app.js` (the gigs page is `/gigs`)
 - `tests/`: pytest, about 580 tests, fakes in `tests/fakes.py`
 
 ## 5. Conventions

@@ -493,7 +493,8 @@ it appears. Not a CV builder, not an application tracker: JobRadar finds and tel
   by hand, judged by the same rules
 - [ ] More sources: the blocked ones need an allowed path (a permitted API, a feed, or an
   account the owner uses), not a way around the block
-- [ ] A gig page on the dashboard: today the gigs live in the email, the CLI and the database
+- [x] A gig page on the dashboard: `/gigs` lists the gigs with what they pay, where they are
+  and when they were posted, and the sidebar shows how many there are
 
 ---
 

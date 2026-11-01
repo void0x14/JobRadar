@@ -20,6 +20,7 @@
     <a href="/" {% if nav == 'today' %}aria-current="page"{% endif %}><svg class="i"><use href="#i-today"/></svg><span>Today</span>{% if ov.today %}<b class="badge hot">{{ ov.today }}</b>{% endif %}</a>
     <a href="/jobs" {% if nav == 'jobs' %}aria-current="page"{% endif %}><svg class="i"><use href="#i-list"/></svg><span>All jobs</span><b class="badge">{{ ov.jobs }}</b></a>
     <a href="/skills" {% if nav == 'skills' %}aria-current="page"{% endif %}><svg class="i"><use href="#i-spark"/></svg><span>Skills</span></a>
+    <a href="/gigs" {% if nav == 'gigs' %}aria-current="page"{% endif %}><svg class="i"><use href="#i-mail"/></svg><span>Gigs</span>{% if ov.gigs %}<b class="badge">{{ ov.gigs }}</b>{% endif %}</a>
     <a href="/digest" {% if nav == 'digest' %}aria-current="page"{% endif %}><svg class="i"><use href="#i-mail"/></svg><span>Digest</span></a>
   </nav>
   <div class="agent {{ 'awake' if ov.awake else 'asleep' }}">

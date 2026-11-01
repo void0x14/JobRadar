@@ -68,6 +68,82 @@ def test_a_schedule_is_not_a_payment_model() -> None:
     assert gig.verdict == Verdict.UNCERTAIN
 
 
+def test_daily_as_an_adverb_is_not_a_payment_model() -> None:
+    """ "GÖREV VE SORUMLULUKLAR GÜNLÜK"" is a duty, not a wage."""
+    gig = classify(
+        title="Yemek ve Temizlik Elemanı",
+        description="GÖREV VE SORUMLULUKLAR GÜNLÜK TEMİZLİK İŞLERİ. Ankara.",
+        url="https://x.test/31",
+        platform="test",
+    )
+    assert gig.verdict == Verdict.UNCERTAIN
+
+
+def test_weekly_as_an_adverb_is_not_a_payment_model() -> None:
+    gig = classify(
+        title="Muhasebeci",
+        description="Haftalık toplantılara katılacak muhasebeci, Ankara.",
+        url="https://x.test/32",
+        platform="test",
+    )
+    assert gig.verdict == Verdict.UNCERTAIN
+
+
+def test_a_headcount_is_not_a_wage() -> None:
+    gig = classify(
+        title="Depo",
+        description="Günlük 3 kişi çalışacağız, Ankara.",
+        url="https://x.test/33",
+        platform="test",
+    )
+    assert gig.verdict == Verdict.UNCERTAIN
+    assert gig.payment_amount is None
+
+
+def test_full_time_is_out_even_with_a_daily_word() -> None:
+    gig = classify(
+        title="Bölge Satış Sorumlusu",
+        description="Tam Zamanlı çalışacak satış sorumlusu, Ankara.",
+        url="https://x.test/34",
+        platform="test",
+    )
+    assert gig.verdict == Verdict.EXCLUDED
+    assert "full-time" in " ".join(gig.reasons)
+
+
+def test_a_daily_pay_wins_over_the_full_time_words() -> None:
+    gig = classify(
+        title="Günlükçü Temizlik",
+        description="Günlük ücret 1.500 TL, tam zamanlı çalışmayacağız. Ankara.",
+        url="https://x.test/35",
+        platform="test",
+    )
+    assert gig.verdict == Verdict.GIG
+    assert gig.payment_amount == 1500
+
+
+def test_a_monthly_wage_beside_a_daily_word_is_still_full_time() -> None:
+    """ "Ücret: 30.000 TL"" and a "günlük" elsewhere in the ad is not a daily wage."""
+    gig = classify(
+        title="Part Time - Full Time Garson(Öğrenci)",
+        description="PART TIME ek servis garson. Ücret: 30.000 TL. Çalışma günlük 8 saat.",
+        url="https://x.test/37",
+        platform="test",
+    )
+    assert gig.verdict == Verdict.EXCLUDED
+
+
+def test_the_title_loses_the_markers_the_board_glues_to_it() -> None:
+    gig = classify(
+        title="Garson Köfteci Ramiz Taurus Çankaya, AnkaraPart TimeYeni",
+        description="Part time garson, Ankara.",
+        url="https://x.test/36",
+        platform="test",
+    )
+    assert not gig.job_title.endswith("Yeni")
+    assert "Part Time" not in gig.job_title
+
+
 @pytest.mark.parametrize(
     ("text", "unit"),
     [
@@ -236,6 +312,46 @@ async def test_a_link_adapter_keeps_only_the_ad_links() -> None:
     listings = await adapter.scan(client)  # type: ignore[arg-type]
     assert [item.url for item in listings] == ["https://site.test/is-ilani/bir-i1"]
     assert listings[0].title == "Bir İlan"
+
+
+async def test_the_listing_page_s_own_index_gives_the_title() -> None:
+    """A board that serves a schema.org ItemList says what each ad is; the link text
+    ("Apply now") says nothing."""
+    from jobradar.gig.structured import read_item_list
+
+    html = (
+        "<script type='application/ld+json'>"
+        + json.dumps(
+            {
+                "@context": "https://schema.org",
+                "@type": "CollectionPage",
+                "mainEntity": {
+                    "@type": "ItemList",
+                    "itemListElement": [
+                        {
+                            "@type": "ListItem",
+                            "position": 1,
+                            "url": "https://site.test/jobs/bir-i1",
+                            "name": "Günlük Temizlik Elemanı",
+                        }
+                    ],
+                },
+            }
+        )
+        + "</script>"
+        + '<a href="/jobs/bir-i1">Apply now</a>'
+    )
+    assert read_item_list(html) == {"https://site.test/jobs/bir-i1": "Günlük Temizlik Elemanı"}
+    adapter = LinkAdapter(
+        key="test",
+        name="Test",
+        platform="test",
+        list_urls=["https://site.test/list"],
+        pattern=r"site\.test/jobs/",
+    )
+    client = FakeClient({"https://site.test/list": html})
+    listings = await adapter.scan(client)  # type: ignore[arg-type]
+    assert [item.title for item in listings] == ["Günlük Temizlik Elemanı"]
 
 
 async def test_a_blocked_source_is_reported_not_hidden(repo: Repo) -> None:

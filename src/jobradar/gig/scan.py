@@ -17,10 +17,10 @@ from datetime import UTC, datetime, timedelta
 
 from jobradar.db.repo import Repo
 from jobradar.gig.adapters import ADAPTERS
-from jobradar.gig.adapters.base import Adapter, Blocked, WebClient, main_text
+from jobradar.gig.adapters.base import Adapter, Blocked, WebClient, _junk_title, main_text
 from jobradar.gig.classify import classify, detect_employer, detect_published
 from jobradar.gig.models import Gig, Verdict
-from jobradar.gig.structured import read_posting
+from jobradar.gig.structured import page_title, read_posting
 from jobradar.pipeline.dedupe import sha1
 
 log = logging.getLogger(__name__)
@@ -102,9 +102,11 @@ async def scan_source(
         city = None
         district = None
         title = listing.title
+        page_html = None
         if fetch_details:
             try:
                 html = await client.html(listing.url)
+                page_html = html
                 posting = read_posting(html)
                 if posting is not None:
                     description = posting.description or description
@@ -119,6 +121,9 @@ async def scan_source(
                     description = main_text(html) or description
             except Blocked as e:
                 log.info("ad page not readable", extra={"source": adapter.key, "error": str(e)})
+        if _junk_title(title) and page_html is not None:
+            # The link text said nothing ("Apply now", "Preview Job"): the page knows.
+            title = page_title(page_html) or title
         if not description:
             description = listing.title
         gig = classify(

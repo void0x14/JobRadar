@@ -65,20 +65,25 @@ SECRETCV = LinkAdapter(
     default_city="Ankara",
 )
 
-# LinkedIn's public guest search: the same JSON the jobs page renders server-side.
-# No key, no login, and only what it already shows publicly.
+# LinkedIn's public job search. The jobs-guest endpoint is off limits (robots.txt disallows
+# /jobs-guest/), so this is the path the site itself serves to anyone: the same cards, no key
+# and no login.
 LINKEDIN = LinkAdapter(
     key="linkedin",
-    name="LinkedIn (public guest search, Ankara)",
+    name="LinkedIn (public job search, Ankara)",
     platform="linkedin",
     list_urls=[
-        "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
-        "?keywords=Part-Time&location=Ankara&f_TPR=r86400&start=0",
-        "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
-        "?keywords=Günlük%20Ücretli&location=Ankara&f_TPR=r86400&start=0",
+        "https://www.linkedin.com/jobs/search/?keywords=Part-Time&location=Ankara&f_TPR=r86400",
+        "https://www.linkedin.com/jobs/search/"
+        "?keywords=Günlük%20Ücretli&location=Ankara&f_TPR=r86400",
     ],
     pattern=r"linkedin\.com/jobs/view/",
     max_pages=2,
+    note=(
+        "LinkedIn's robots.txt disallows every path for generic agents (User-agent: * -> "
+        "Disallow: /) and asks crawlers to apply for a whitelist, so this source stays blocked "
+        "until they say yes."
+    ),
 )
 
 # Both answer 403 with a challenge page: they are in the list so the report can say so.

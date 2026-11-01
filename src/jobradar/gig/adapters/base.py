@@ -21,6 +21,8 @@ from urllib.robotparser import RobotFileParser
 import httpx
 import trafilatura
 
+from jobradar.gig.structured import read_item_list
+
 log = logging.getLogger(__name__)
 
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) JobRadar/0.3 (+https://github.com/ThePlator/JobRadar)"
@@ -39,6 +41,30 @@ BLOCK_MARKERS = (
 
 class Blocked(Exception):
     """The source refused us (403, a WAF challenge, a login wall). Not worked around."""
+
+
+_JUNK_TITLES = {
+    "apply now",
+    "apply",
+    "skip to content",
+    "details",
+    "more",
+    "read more",
+    "devam",
+    "ilani ac",
+    "basvur",
+    "basvur formu",
+    "incele",
+    "view",
+    "open",
+    "jobs",
+    "is ilanlari",
+}
+
+
+def _junk_title(title: str) -> bool:
+    """A link text that says nothing about the ad ("Apply now", "Skip to content")."""
+    return title.strip().casefold() in _JUNK_TITLES or len(title.strip()) < 3
 
 
 class WebClient:
@@ -208,15 +234,23 @@ class LinkAdapter:
                 # blocked only when every one of its pages is refused.
                 errors.append(str(e))
                 continue
+            names = read_item_list(body)
             for href, text in extract_links(body, url):
                 if not self._compiled.search(href):
                     continue
-                if href in found:
-                    continue
-                title = text.strip()
+                key = href.split("#", 1)[0].split("?", 1)[0].rstrip("/")
+                title = names.get(key, "").strip() or text.strip()
                 if not title:
                     continue
-                found[href] = Listing(
+                if key in found:
+                    # The same ad twice (a card link and an 'Apply now' link): keep the
+                    # title that says what the ad is.
+                    if len(title) > len(found[key].title) and not _junk_title(found[key].title):
+                        found[key] = Listing(
+                            url=href, title=title, platform=self.platform, source_key=self.key
+                        )
+                    continue
+                found[key] = Listing(
                     url=href, title=title, platform=self.platform, source_key=self.key
                 )
         if not found and errors:

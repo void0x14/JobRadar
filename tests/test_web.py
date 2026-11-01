@@ -158,6 +158,27 @@ def test_pages_render(client: TestClient, repo: Repo) -> None:
     assert '<symbol id="blip"' in today.text and "Good afternoon" in today.text
 
 
+def test_the_gigs_page_shows_the_short_paid_work(client: TestClient, repo: Repo) -> None:
+    from jobradar.gig.classify import classify
+
+    gig = classify(
+        title="Günlük 1.500 TL temizlik elemanı",
+        description="Ankara Çankaya'da günlük 1.500 TL yevmiye ile temizlik elemanı.",
+        url="https://acme.com/ilan/gunluk",
+        platform="eleman",
+    )
+    repo.save_gig(gig)
+    page = client.get("/gigs")
+    assert page.status_code == 200
+    assert "Günlük 1.500 TL" in page.text
+    assert "1500 TL/gün" in page.text
+    assert "Ankara" in page.text
+    assert "https://acme.com/ilan/gunluk" in page.text
+    # A job that is not a gig is not on the page.
+    add(repo, "j", company="Acme")
+    assert "Software Engineer @ Acme" not in client.get("/gigs").text
+
+
 def test_errors_are_pages(client: TestClient) -> None:
     missing = client.get("/jobs/nope")
     assert missing.status_code == 404 and "Not found" in missing.text

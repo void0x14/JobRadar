@@ -33,7 +33,7 @@ _UNIT_WORDS: list[tuple[PaymentUnit, str]] = [
         PaymentUnit.PER_TASK,
         r"görev\s+(?:başı|başına|bazlı)|task\s*(?:başı|başına|bazlı)|"
         r"adet\s+başı|iş\s+başına|sipariş\s+başı|her\s+görev|per\s+task|"
-        r"tek\s+seferlik|bir\s+kerelik|/\s*görev",
+        r"per\s+(?:\w+\s+){0,2}task|tek\s+seferlik|bir\s+kerelik|/\s*görev",
     ),
     (
         PaymentUnit.PER_PROJECT,
@@ -77,7 +77,7 @@ _FULL_TIME = re.compile(
     re.IGNORECASE,
 )
 _HEAVY = re.compile(
-    r"(\d{1,3})\s*kg|kg\s*(?:ağırlığında|taşıma|taşınacak)|ağır\s+fiziksel|ağır\s+iş|"
+    r"(?:1\d|[2-9]\d|\d{3,})\s*kg|kg\s*(?:ağırlığında|taşıma|taşınacak)|ağır\s+fiziksel|ağır\s+iş|"
     r"yük\s+taşıma|vinç|şantiye|inşaat\s+işçisi|forklift",
     re.IGNORECASE,
 )
@@ -139,7 +139,10 @@ _DURATION = re.compile(
     r"\d{1,2}\s+hafta|\d{1,2}\s+ay|yarı\s+gün))",
     re.IGNORECASE,
 )
-_HOURS = re.compile(r"(?P<text>\d{1,2}\s*(?:saat|hours?))", re.IGNORECASE)
+_HOURS = re.compile(
+    r"(?P<text>\d{1,2}\s*(?:saat|hours?)|\d{1,2}[:.]\d{2}\s*[-\u2013]\s*\d{1,2}[:.]\d{2})",
+    re.IGNORECASE,
+)
 
 _TIMING = re.compile(
     r"(?P<text>gün\s+sonunda|hafta\s+sonunda|ay\s+sonunda|iş\s+bitince|teslim(?:at|atta|"
@@ -222,6 +225,27 @@ _ANCHOR_HINTS = (
 # word sits next to hours or days, it says when the work happens, not what it pays.
 _SCHEDULE = re.compile(r"\d{1,2}\s*saat|haftada\s*\d|günde\s*\d|çalışma\s+saat", re.IGNORECASE)
 
+# The words that make a number a wage: without one of them near it, a number is a headcount,
+# a day count or an age.
+_PAY_WORD = re.compile(
+    r"ücret|yevmiye|maaş|ödeme|bedeli|fiyat|kazanç|kazandır|tutar|rate|per\s+day|per\s+week",
+    re.IGNORECASE,
+)
+_COUNT_AFTER = re.compile(
+    r"\s*\+?\s*(?:kişi|kişilik|gün|saat|saatlik|saat/ay|adet|yıl|ay|kez)\b", re.IGNORECASE
+)
+_MONEY_RE = re.compile(r"\d[\d.,]*\s*(?:TL|TRY|₺|USD|\$|EUR|€)", re.IGNORECASE)
+
+
+def _big_number(text: str) -> bool:
+    """A number big enough to be a wage (a headcount or a day count is not)."""
+    for found in _AMOUNT_RE.finditer(text):
+        value = _number(found.group("amount"))
+        if value is not None and value >= 20:
+            return True
+    return False
+
+
 # The ad body ends where the site's own text starts. These markers are the boilerplate the
 # job boards print under every ad; keeping it would feed the classifier words that are not
 # about the job.
@@ -236,6 +260,7 @@ _BOILERPLATE = (
     "Başvur formu",
     "İş ilanı ver",
     "Şirket ilanları",
+    "Ana Sayfa - İş İlanları",
 )
 
 
@@ -247,6 +272,23 @@ def clean_ad_text(text: str) -> str:
         if 0 <= at < cut:
             cut = at
     return text[:cut].strip()
+
+
+# The markers a board glues to the end of a listing's title.
+_TITLE_MARKERS = re.compile(
+    r"\s*(?:yeni|part\s*-?\s*time|tam\s+zamanlı|yarı\s+zamanlı|full\s*-?\s*time|uzaktan)$",
+    re.IGNORECASE,
+)
+
+
+def clean_title(text: str) -> str:
+    """A listing's title without the markers the board glues to it ("… Part Time Yeni")."""
+    out = " ".join(text.split())
+    while True:
+        stripped = _TITLE_MARKERS.sub("", out).strip()
+        if stripped == out:
+            return out
+        out = stripped
 
 
 def _number(text: str) -> float | None:
@@ -276,12 +318,19 @@ def extract_payment(text: str) -> tuple[float | None, str | None, PaymentUnit, P
             unit, unit_at, unit_end = candidate, found.start(), found.end()
     if unit_at >= 0 and _SCHEDULE.search(text[max(0, unit_at - 30) : unit_end + 40]):
         unit, unit_at, unit_end = PaymentUnit.UNKNOWN, -1, -1
+    if unit_at >= 0 and unit in (PaymentUnit.DAILY, PaymentUnit.WEEKLY):
+        # "günlük raporlama" and "haftalık toplantı" are not payment models: the word has to
+        # come with the money ("günlük ücret", "haftalık 4.000 TL") to count as one.
+        near = text[max(0, unit_at - 30) : unit_end + 40]
+        if not _PAY_WORD.search(near) and not _MONEY_RE.search(near) and not _big_number(near):
+            unit, unit_at, unit_end = PaymentUnit.UNKNOWN, -1, -1
 
     amount: float | None = None
     currency: str | None = None
     if unit_at >= 0:
-        # The amount has to be near the unit word: "3 kişi" is not a rate. The closest
-        # number wins, and one that carries a currency beats one that doesn't.
+        # The amount has to be near the unit word: "3 kişi" is not a rate. One that carries
+        # a currency wins; a bare number only counts when it sits right next to the unit word
+        # and is big enough to be a wage, not a headcount or a day count.
         start = max(0, unit_at - 60)
         window = text[start : unit_at + 60]
         best: tuple[tuple[int, float], float, str | None] | None = None
@@ -291,6 +340,10 @@ def extract_payment(text: str) -> tuple[float | None, str | None, PaymentUnit, P
                 continue
             money = _CURRENCY_NAMES.get((found.group("currency") or "").lower())
             distance = abs(found.start() - (unit_end - start))
+            if money is None and (
+                distance > 8 or value < 20 or _COUNT_AFTER.match(window, found.end())
+            ):
+                continue
             score = (0 if money else 1, distance)
             if best is None or score < best[0]:
                 best = (score, value, money)
@@ -410,7 +463,11 @@ def classify(
 
     reasons: list[str] = []
     confidence = 0.0
-    if unit == PaymentUnit.UNKNOWN:
+    if _FULL_TIME.search(text) and not _EXPLICIT_DAILY_PAY.search(text):
+        verdict = Verdict.EXCLUDED
+        reasons.append("full-time")
+        confidence = 0.7
+    elif unit == PaymentUnit.UNKNOWN:
         verdict = Verdict.UNCERTAIN
         reasons.append("no payment model in the text")
         confidence = 0.2
@@ -418,10 +475,6 @@ def classify(
         verdict = Verdict.EXCLUDED
         reasons.append("monthly pay only")
         confidence = 0.7
-    elif _FULL_TIME.search(text) and unit != PaymentUnit.DAILY:
-        verdict = Verdict.EXCLUDED
-        reasons.append("full-time")
-        confidence = 0.6
     elif effort == Effort.HEAVY:
         verdict = Verdict.EXCLUDED
         reasons.append("heavy physical work")
@@ -445,12 +498,12 @@ def classify(
         city = default_city
 
     if _FULL_TIME.search(text) and verdict == Verdict.GIG:
-        reasons.append("says full-time but a gig unit was found")
+        reasons.append("says full-time but states a daily pay")
         confidence = min(confidence, 0.6)
 
     gig = Gig(
         job_id=job_id or sha1(url)[:40],
-        job_title=title.strip()[:200] or "(başlıksız ilan)",
+        job_title=clean_title(title)[:200] or "(başlıksız ilan)",
         employer=employer,
         original_url=url,
         source_platform=platform,
@@ -520,6 +573,14 @@ _ELIGIBILITY = re.compile(
     r"(?P<text>\d{1,2}\s*-\s*\d{1,2}\s*yaş|son\s+sınıf\s+(?:öğrenci|mezun)?|"
     r"SGK'?li?\s*(?:olmak|olabilir)?|en\s+az\s+\d{1,2}\s+yıl(?:\s+deneyim)?|"
     r"(?:kadın|erkek)\s+aday)",
+    re.IGNORECASE,
+)
+
+# "Tam zamanlı" is out unless the ad also states a daily pay ("günlük ücret 1.500 TL").
+_EXPLICIT_DAILY_PAY = re.compile(
+    r"günlük\s*(?:ücret|yevmiye|ücreti)\s*[:=]?\s*[\d.]+"
+    r"|(?:ücret|yevmiye)\s*[:=]?\s*[\d.]+\s*(?:TL|TRY|₺|USD|\$|EUR|€)?\s*günlük"
+    r"|günlük\s*[:=]\s*[\d.]+",
     re.IGNORECASE,
 )
 

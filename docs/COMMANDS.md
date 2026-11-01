@@ -230,6 +230,16 @@ uv run jobradar gig add --text "Günlük 1.500 TL yevmiye, Ankara Çankaya" --ur
 Adds an ad by hand. This is the path for Facebook groups and WhatsApp groups: they need an
 account, so nothing is scraped from them; copy the ad (or forward it) and run this.
 
+### The gigs page
+
+```bash
+uv run jobradar web
+```
+The dashboard has a **Gigs** page (`/gigs`): the short-paid work the finder found, newest
+first, with what it pays, where it is, when it was posted and where it came from. The page
+opens automatically at http://127.0.0.1:8080/gigs; the sidebar shows how many gigs there
+are.
+
 ### `jobradar web`
 
 ```bash
