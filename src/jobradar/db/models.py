@@ -235,3 +235,66 @@ class LLMCache(SQLModel, table=True):
     output: str
     cost_inr: float | None = None
     created_at: str
+
+
+class GigRow(SQLModel, table=True):
+    """One short-paid job the finder found: what it is, what it pays and where it came from."""
+
+    __tablename__ = "gig"
+    __table_args__ = (Index("gig_fingerprint", "fingerprint"), Index("gig_verdict", "verdict"))
+
+    job_id: str = Field(primary_key=True)  # sha1(original_url)
+    fingerprint: str = ""  # same ad on two sites: one row
+    job_title: str
+    employer: str | None = None
+    original_url: str
+    source_platform: str
+    source_key: str = ""
+    city: str | None = None
+    district: str | None = None
+    remote_or_onsite: str = "unknown"
+    job_description: str = ""
+    payment_amount: float | None = None
+    payment_currency: str | None = None
+    payment_unit: str = "unknown"
+    payment_frequency: str = "unknown"
+    payment_timing: str | None = None
+    work_duration: str | None = None
+    working_hours: str | None = None
+    publication_date: str | None = None
+    application_method: str | None = None
+    contact_information: str | None = None
+    physical_effort: str = "unknown"
+    required_skills: str = "[]"  # JSON list
+    eligibility: str | None = None
+    confidence_score: float = 0.0
+    verdict: str = "uncertain"  # gig | uncertain | excluded
+    reasons: str = "[]"  # JSON list: why it was kept or dropped
+    seen_on: str = "[]"  # JSON list: every platform it was seen on
+    first_seen: str
+    last_seen: str
+    closed_at: str | None = None  # the ad page is gone: the ad is closed
+    notified_at: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class GigSource(SQLModel, table=True):
+    """How a source is doing: when it last answered, how many ads it gave, how often it failed."""
+
+    __tablename__ = "gig_source"
+
+    key: str = Field(primary_key=True)
+    name: str
+    platform: str
+    url: str | None = None
+    enabled: bool = True
+    manual: bool = False
+    note: str = ""
+    last_ok: str | None = None
+    last_error: str | None = None
+    error_count: int = 0
+    listings_total: int = 0
+    gigs_total: int = 0
+    last_listings: int = 0
+    updated_at: str

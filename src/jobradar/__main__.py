@@ -799,5 +799,157 @@ def stats(days: Annotated[int, typer.Option(help="Window in days.")] = 7) -> Non
     typer.echo(render(build_report(repo, days, alert_above=settings.config.scoring.alert_above)))
 
 
+gig_app = typer.Typer(
+    help="Türkiye kısa süreli iş avcısı: günlük, saatlik, görev ve proje başına ödeme.",
+    no_args_is_help=True,
+)
+app.add_typer(gig_app, name="gig")
+
+
+def _gig_settings() -> Settings:
+    try:
+        return load_settings(CONFIG_PATH)
+    except ConfigError as e:
+        _fail(str(e))
+        raise  # unreachable; keeps type checkers happy
+
+
+@gig_app.command("scan")
+def gig_scan(
+    source: Annotated[
+        list[str] | None,
+        typer.Option("--source", help="Sadece bu kaynakları tara."),
+    ] = None,
+    no_details: Annotated[
+        bool, typer.Option("--no-details", help="İlan sayfalarını okuma, yalnızca listeyi tara.")
+    ] = False,
+    notify: Annotated[
+        bool, typer.Option("--notify/--no-notify", help="Yeni işleri e-posta ile bildir.")
+    ] = True,
+) -> None:
+    """Tüm kaynakları tara, yeni kısa süreli işleri kaydet ve bildir."""
+    import asyncio
+
+    from jobradar import app as application
+    from jobradar.gig import notify as gig_notify
+    from jobradar.gig import scan as gig_scan_module
+
+    settings = _gig_settings()
+    logs.setup()
+    repo, _ = application.open_store()
+    results = asyncio.run(
+        gig_scan_module.scan_all(
+            repo, only=list(source) if source else None, fetch_details=not no_details
+        )
+    )
+    new_gigs = [g for r in results for g in r.new_gigs]
+    for r in results:
+        mark = "OK " if r.ok else "X  "
+        print(
+            f"{mark} {r.name}: {r.listings} ilan, {r.new} yeni, {r.gigs} kısa süreli iş"
+            + (f"  ({r.error})" if r.error else "")
+        )
+    total_gigs = repo.count_gigs("gig")
+    uncertain = repo.count_gigs("uncertain")
+    print(f"\nToplam: {total_gigs} kısa süreli iş, {uncertain} belirsiz (ödemesi yazmıyor).")
+    if notify and new_gigs:
+        wanted = {n.original_url for n in new_gigs}
+        rows = [g for g in repo.list_gigs(verdict="gig", limit=200) if g.original_url in wanted]
+        print(gig_notify.notify(settings, rows))
+    elif new_gigs:
+        print(f"{len(new_gigs)} yeni kısa süreli iş (bildirim kapalı).")
+
+
+@gig_app.command("list")
+def gig_list(
+    verdict: Annotated[str, typer.Option("--verdict", help="gig | uncertain | excluded")] = "gig",
+    source: Annotated[str | None, typer.Option("--source", help="Sadece bu kaynak.")] = None,
+    limit: Annotated[int, typer.Option(help="Kaç ilan gösterilsin.")] = 20,
+) -> None:
+    """Kayıtlı ilanları listele."""
+    from jobradar import app as application
+    from jobradar.gig import notify as gig_notify
+
+    repo, _ = application.open_store()
+    rows = repo.list_gigs(verdict=verdict, limit=limit, source_key=source)
+    if not rows:
+        print(f"{verdict} kategorisinde ilan yok.")
+        return
+    for gig in rows:
+        print(f"- {gig_notify.gig_line(gig)}")
+        print(f"  {gig.original_url}")
+
+
+@gig_app.command("sources")
+def gig_sources() -> None:
+    """Her kaynağın durumu: son başarılı tarama, hata sayısı, bulunan ilan."""
+    from jobradar import app as application
+
+    repo, _ = application.open_store()
+    rows = repo.gig_sources()
+    if not rows:
+        print("Henüz tarama yapılmadı.")
+        return
+    print(f"{'kaynak':<26}{'durum':<12}{'son okuma':<22}{'hata':>6}{'ilan':>8}{'is':>6}")
+    for row in rows:
+        state = "manuel" if row.manual else ("calisiyor" if row.last_ok else "okunmadi")
+        print(
+            f"{row.key:<26}{state:<12}{(row.last_ok or '-')[:19]:<22}"
+            f"{row.error_count:>6}{row.listings_total:>8}{row.gigs_total:>6}"
+        )
+        if row.last_error:
+            print(f"    son hata: {row.last_error[:100]}")
+
+
+@gig_app.command("validate")
+def gig_validate(
+    source: Annotated[
+        list[str] | None, typer.Option("--source", help="Sadece bu kaynakları doğrula.")
+    ] = None,
+) -> None:
+    """Her kaynak için dokuz kontrolü çalıştır ve raporu bas."""
+    import asyncio
+
+    from jobradar import app as application
+    from jobradar.gig import validate as gig_validate_module
+
+    repo, _ = application.open_store()
+    reports = asyncio.run(
+        gig_validate_module.validate_all(repo, only=list(source) if source else None)
+    )
+    print(gig_validate_module.render(reports))
+
+
+@gig_app.command("add")
+def gig_add(
+    text: Annotated[str, typer.Option(help="İlanın metni.")],
+    url: Annotated[str | None, typer.Option(help="İlanın bağlantısı.")] = None,
+    source: Annotated[
+        str, typer.Option(help="Kaynak: facebook, whatsapp, telegram, manuel")
+    ] = "manuel",
+) -> None:
+    """Elle getirilen bir ilanı ekle (Facebook ve WhatsApp akışı)."""
+    from jobradar import app as application
+    from jobradar.gig.classify import classify, detect_employer, detect_published
+    from jobradar.pipeline.dedupe import sha1
+
+    repo, _ = application.open_store()
+    link = url or f"https://manuel.local/{sha1(text)[:16]}"
+    gig = classify(
+        title=text.split("\n", 1)[0][:120],
+        description=text,
+        url=link,
+        platform=source,
+        employer=detect_employer(text),
+        published=detect_published(text),
+    )
+    gig.job_id = sha1(link)[:40]
+    gig.source_key = source
+    job_id, is_new = repo.save_gig(gig)
+    state = "yeni" if is_new else "zaten kayitli"
+    print(f"{state}: {gig.job_title[:80]} | {gig.verdict} | {gig.payment_text or 'odeme yazmiyor'}")
+    print(f"  {link}")
+    print(f"  kaydedildi: {job_id}")
+
 if __name__ == "__main__":
     app()

@@ -22,6 +22,8 @@ roles. It:
    buttons.
 5. **Shows everything on a local dashboard** (FastAPI + Jinja, http://127.0.0.1:8080), optionally
    mirrored to Notion.
+6. **Finds short-paid work in Türkiye** (`jobradar gig`): daily, hourly, per-task and per-project
+   jobs in Ankara or remote, from 28 sources, deduplicated and emailed as they appear.
 
 JobRadar never applies for the user, and it doesn't write resumes: it finds and ranks jobs,
 then tells the user about them. The user reviews and submits every application.
@@ -34,6 +36,7 @@ then tells the user about them. The user reviews and submits every application.
 | v0.2 Read and match | page reading, free extraction, Match Score, decide, scams, email alerts, digest | done |
 | v0.2.5 Statuses and feeds | Notion/email statuses, company boards, still-open check, reminders | done |
 | v0.5 Dashboard | Today, All jobs (full-text search), Skills (what jobs really want), Digest, job pages; phone via Tailscale; Notion and Telegram optional | done (PRs #68-#93) |
+| Local LLM servers | Gemini Web and DeepSeek Web on the owner's own machine, no API key, with a fallback chain; `jobradar llm` installs, starts and switches them | done |
 | Matching with Jev | TypeSafe's Jev answers match questions with calibrated confidence, beside Gemini first | **next**, waiting for the owner's TypeSafe key |
 | v1.0 Public release | Docker image, PyPI `jobradar-agent`, setup guide, WhatsApp experimental | planned |
 
@@ -69,6 +72,8 @@ Everything runs as tasks on a durable SQLite-backed queue (`queue/`), so a resta
 - `pipeline/`: ingest -> extract -> match -> decide; `status_rules.py` (what a status change may do,
   shared by email buttons and the dashboard); `skill_gaps.py` + `skill_detail.py` (Skills page)
 - `sinks/`: email alerts, digest, reminders, email buttons, Notion
+- `gig/`: the Türkiye gig finder: `adapters/` (one per source), `classify.py` (the payment model
+  rules), `scan.py`, `notify.py`, `validate.py` (the nine source checks), `watcher.py`
 - `web/`: `app.py` (routes, security), `views.py` (page data), `search.py` (FTS5),
   `templates/` (Jinja), `static/app.css` + `app.js`
 - `tests/`: pytest, about 580 tests, fakes in `tests/fakes.py`
@@ -90,7 +95,8 @@ Everything runs as tasks on a durable SQLite-backed queue (`queue/`), so a resta
 - SQL only in `db/repo.py`. New settings get defaults in `config.py` and a line in
   `config.example.yaml`.
 - Rules before LLM calls; cache LLM answers; respect `llm.daily_budget_inr`. The free Gemini tier
-  is the target, so count calls.
+  is the target, so count calls. A model can also be a local server named in `llm.endpoints`
+  (the prefix in the model picks it); `llm.fallback_models` are tried in order.
 - Network work goes through tasks with retry/backoff; errors are logged with context, never
   swallowed.
 - Tests come with every change, using fakes rather than real services.
@@ -131,8 +137,10 @@ Everything runs as tasks on a durable SQLite-backed queue (`queue/`), so a resta
 ## 6. Decisions already made (don't reopen without the owner)
 
 - MIT license; PyPI name `jobradar-agent`, CLI and import name `jobradar`.
-- LLMs: hosted Gemini or Groq through LiteLLM; extraction model `gemini-flash-lite-latest`;
-  writer model `gemini-flash-latest` (Gemini Pro has no free quota for the owner).
+- LLMs: hosted Gemini or Groq through LiteLLM, or a local server that speaks the OpenAI API
+  (Gemini Web with the owner's cookie, DeepSeek Web as the fallback; no key); extraction model
+  `gemini-flash-lite-latest`; writer model `gemini-flash-latest` (Gemini Pro has no free quota
+  for the owner).
 - Notifications by email (SMTP), not a Telegram bot. Telegram is a job source only.
 - Owner's filters: batch years 2025-2026, anywhere in India plus remote, `branch_strict: true`
   (CSE/IT-only posts are hidden), alert at score 75.

@@ -12,6 +12,7 @@ from typing import Any
 
 from jobradar.config import ConfigError, Settings
 from jobradar.db.repo import DEFAULT_DB_PATH, Repo, TaskRecord, init_db, make_engine
+from jobradar.gig.watcher import GigWatcher
 from jobradar.llm import LLM, load_prompt
 from jobradar.pipeline.extract import Extractor, backfill_published, backfill_role_keys
 from jobradar.pipeline.fetch import Fetcher
@@ -27,6 +28,7 @@ from jobradar.pipeline.task_types import (
     EXTRACT,
     FETCH,
     FREEHIRE_CHECK,
+    GIG_SCAN,
     MATCH,
     NOTION_BODY,
     NOTION_POLL,
@@ -230,6 +232,10 @@ class Pipeline:
         self.digest = make_digest(settings, repo, queue)
         if self.digest is not None:
             handlers[DIGEST] = self.digest.send
+        self.gigs: GigWatcher | None = None
+        if settings.config.gig.enabled:
+            self.gigs = GigWatcher(settings, repo, queue)
+            handlers[GIG_SCAN] = self.gigs.tick
         self.reminders = make_reminders(settings, repo, queue, self.liveness)
         if self.reminders is not None:
             handlers[CLOSING_CHECK] = self.reminders.tick
@@ -327,6 +333,12 @@ async def run(settings: Settings) -> None:
     if pipeline.digest is not None:
         at = pipeline.digest.schedule_next()
         log.info("next digest", extra={"at": f"{at:%Y-%m-%d %H:%M}"})
+    if pipeline.gigs is not None:
+        pipeline.gigs.schedule()  # then every gig.every_minutes
+        log.info(
+            "looking for daily gigs",
+            extra={"every_minutes": pipeline.gigs.every_minutes},
+        )
     source = TelegramSource(settings, repo) if telegram else None
     dashboard = start_dashboard(settings, repo, queue, worker.wake)
 

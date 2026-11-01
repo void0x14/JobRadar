@@ -84,6 +84,8 @@ On every start, JobRadar catches up on Telegram posts it missed, re-scores open 
 | `jobradar digest --now` | Send the morning/evening digest for the current window right away |
 | `jobradar skills` | Skills your good matches named in the last 7 days that your profile doesn't list (`--days 30` for longer) |
 | `jobradar replies --check` | Read the inbox now for "Shortlist" / "Not interested" button emails and update the jobs |
+| `jobradar llm` | The local model servers: which model is in use, which fallback is waiting, and what each server offers |
+| `jobradar llm use <provider/model>` | Switch the model in config.yaml (`--slot extract` or `--slot writer` for one of them) |
 | `jobradar doctor` | *Not built yet*: check keys, tools and access |
 
 Prefix each with `uv run`, e.g. `uv run jobradar stats --days 3`.
@@ -127,6 +129,104 @@ A task fails after 5 attempts (e.g. a site down for hours). This puts them back;
 uv run jobradar skills
 ```
 Counts, across your good matches (score at or above `scoring.alert_above`) from the last 7 days, the technologies they name that your profile doesn't list: "AWS 7, Google Cloud 6, Kubernetes 5…", each counted once per job and shown when two or more jobs name it. A job's skills are its stated skill list plus known technology names in its page and post; words that are also plain English (Go, Spring, Express) count only from stated lists. The first digest of each week shows the same list (`notify.skill_gaps: false` turns that off). If you already know one, add it to `skills:` in profile.yaml so matching counts it. It also warns if a skill in profile.yaml was cut in two at a comma inside brackets.
+
+### `jobradar llm`
+
+```bash
+uv run jobradar llm
+```
+Shows the model chain in config.yaml (the model, the writer model, the fallbacks), then every local server with its address, whether it answers and the models it offers.
+
+```bash
+uv run jobradar llm setup --cookies ~/cookies.json
+```
+Installs the two local servers in `services/` (git-ignored): Gemini Web (a local API that uses your signed-in Gemini session) and DeepSeek Web (the fallback). `--cookies` takes the cookie export from your browser; without it the Gemini server keeps the cookie it already has. The file needs the cookies `__Secure-1PSID` and `__Secure-1PSIDTS`.
+
+```bash
+uv run jobradar llm start        # both servers
+uv run jobradar llm stop
+uv run jobradar llm start gemini-web
+```
+Starts or stops them on 127.0.0.1 (4981 for Gemini Web, 9655 for DeepSeek Web). `jobradar run` starts them for you when config.yaml points at one and it is not up yet.
+
+```bash
+uv run jobradar llm use gemini-web/gemini-auto
+uv run jobradar llm use gemini-web/gemini-auto --slot writer
+```
+Switches the model in config.yaml, keeping your comments and layout. It warns when the server does not offer that model.
+
+```bash
+uv run jobradar llm test
+```
+Asks each model in the chain one small question and prints who answered and how long it took.
+
+```bash
+uv run jobradar llm login
+```
+Opens a Chrome window for the DeepSeek login, which the fallback needs once. Log in there, send a short message, then press Enter in the terminal.
+
+### `jobradar gig scan`
+
+```bash
+uv run jobradar gig scan
+```
+Reads every gig source (Eleman.net, İşin Olsun, Telegram channels, R10, Upwork, DataForce,
+OneForma, OpenTrain AI, Bionluk, Armut, Kariyer.net, SecretCV, LinkedIn, Indeed, Sahibinden,
+the Ankara city hall, Contra, Mindrift, Corpshore, Rise Data Labs, TELUS Digital, RWS) and
+keeps the ads that are really short-paid work: a daily wage, an hourly rate, a fee per task
+or a fee per project, in Ankara or remote.
+
+What it does with each ad:
+
+- the payment model is read from the ad's own words. "Part-time" on its own is not enough;
+- an ad that says nothing about pay goes to the *uncertain* pile, not to the gigs;
+- full-time, monthly-only and heavy-lifting work is dropped, with the reason kept;
+- remote work counts wherever the company is; work on site outside Ankara is dropped;
+- the same ad on two sites keeps one row;
+- the ad's own structured data (when the page has it) is used before the prose: the date,
+  the company, the place and the pay.
+
+`--source <key>` scans only that source (`jobradar gig sources` lists the keys),
+`--no-details` reads only the listing pages, `--no-notify` skips the email. While
+`jobradar run` is up the same scan runs every `gig.every_minutes` (30 by default) and the
+new gigs are emailed as they appear.
+
+### `jobradar gig list`
+
+```bash
+uv run jobradar gig list
+uv run jobradar gig list --verdict uncertain
+```
+The gigs found, one per line: title, company, pay, place, how long, and the link.
+`--verdict gig|uncertain|excluded` picks another pile, `--source` one source, `--limit` how
+many.
+
+### `jobradar gig sources`
+
+```bash
+uv run jobradar gig sources
+```
+How each source is doing: the last time it was read, how many times it failed, how many ads
+it gave and how many of them were gigs. A source that is blocked says so, with the reason.
+
+### `jobradar gig validate`
+
+```bash
+uv run jobradar gig validate
+```
+Runs nine checks against every source: can we reach it, can we read a listing, an ad's
+details, its link, its date, its pay, can the Ankara and remote filter be applied, do the
+results dedupe, and does a second scan find the same ads instead of new ones. The report
+names every source that is blocked and why. Nothing is worked around: a source that answers
+403 or a bot challenge is reported, not forced.
+
+### `jobradar gig add`
+
+```bash
+uv run jobradar gig add --text "Günlük 1.500 TL yevmiye, Ankara Çankaya" --url https://...
+```
+Adds an ad by hand. This is the path for Facebook groups and WhatsApp groups: they need an
+account, so nothing is scraped from them; copy the ad (or forward it) and run this.
 
 ### `jobradar web`
 
@@ -279,6 +379,8 @@ cp -r data data-backup
 | No alert emails | Check `notify.dry_run` is `false`, run `jobradar alerts --test`, and check the log for `decision=alert`. Each job alerts once, only if first seen in the last 2 days with its deadline not passed |
 | `email login rejected` | The Gmail app password in `.env` is wrong or revoked: create a new one. JobRadar doesn't retry, so your account can't get locked |
 | `daily LLM budget reached` | Wait until midnight, or raise `llm.daily_budget_inr` and restart |
+| The local model server doesn't answer | `jobradar llm` shows which one is down; `jobradar llm start` runs it again, and `jobradar llm setup --cookies <file>` gives it a fresh cookie. Its log is in `data/local-llm/` |
+| The local model server says "not logged in" | The DeepSeek fallback needs one login: `jobradar llm login` |
 | A good job was hidden | Look at its reason in the log or Notion; adjust `scoring.hide_below`, `matching.branch_strict` or `filters`, or tell us in an issue |
 | An ad shows up as a job | Add its link to `links.deny`, or report it with the "Ad or link" issue template |
 | Tasks failed | `jobradar retry --failed`, then make sure JobRadar is running |

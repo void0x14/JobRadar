@@ -19,6 +19,7 @@ CLOSING_CHECK = "closing_check"  # hourly: remind you of shortlisted jobs that c
 REPLY_CHECK = "reply_check"  # every 2 min: read "Shortlist" / "Not interested" button emails
 NOTION_STATUS = "notion_status"  # set a Status or Followed Up you chose by email in Notion
 DIGEST = "digest"  # summary email at each notify.digest_times slot (key: local slot time)
+GIG_SCAN = "gig_scan"  # every gig.every_minutes: read every gig source
 NOTION_UPSERT = "notion_upsert"  # job -> page properties
 NOTION_BODY = "notion_body"  # job -> page body (agent toggle)
 

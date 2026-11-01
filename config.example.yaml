@@ -41,6 +41,12 @@ sources:
     poll_minutes: 2
   whatsapp: { enabled: false, port: 8765 }   # experimental, unofficial client — ban risk
 
+gig:                       # the Türkiye daily gig finder (günlük, saatlik, görev, proje)
+  enabled: true             # scan the gig sources while `jobradar run` is up
+  every_minutes: 30         # how often they are read
+  notify: true              # email the new gigs as they appear
+  max_new_per_source: 20    # how many new ads one source may cost per scan
+
 llm:
   extract_model: "gemini/gemini-flash-lite-latest"  # extraction + scoring (cheap, fast)
   extract_mode: fallback    # fallback: LLM only when the page and post don't state role and

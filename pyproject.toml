@@ -73,6 +73,8 @@ extend-exclude = ["docs"]
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF", "ASYNC", "S"]
+# Turkish letters are not typos here: this project's sources are in Turkish.
+allowed-confusables = ["ı", "İ", "ş", "Ş", "ğ", "Ğ", "ü", "Ü", "ö", "Ö", "ç", "Ç"]
 
 [tool.ruff.lint.per-file-ignores]
 # Tests feed real-looking posts: decorative Unicode and en dashes are the input under test.

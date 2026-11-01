@@ -25,6 +25,8 @@ from jobradar.db import models  # also registers every table on SQLModel.metadat
 from jobradar.db.models import (
     FeedBoard,
     FetchedPage,
+    GigRow,
+    GigSource,
     Job,
     JobStatus,
     Platform,
@@ -33,6 +35,7 @@ from jobradar.db.models import (
     TaskStatus,
     WatchedPage,
 )
+from jobradar.gig.models import Gig as GigPost
 
 DEFAULT_DB_PATH = Path("data/jobradar.db")
 
@@ -143,6 +146,17 @@ def _add_new_columns(engine: Engine) -> None:
                         raise RuntimeError(f"cannot add required column {table.name}.{column.name}")
                     kind = column.type.compile(engine.dialect)
                     c.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {kind}'))
+
+
+def _json_list(value: str | None) -> list[str]:
+    """A JSON list column as a list (empty when it is empty or unreadable)."""
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except ValueError:
+        return []
+    return [str(item) for item in parsed] if isinstance(parsed, list) else []
 
 
 @dataclass(frozen=True)
@@ -1286,3 +1300,241 @@ class Repo:
         counts = dict.fromkeys(TaskStatus, 0)
         counts.update({TaskStatus(r[0]): int(r[1]) for r in rows})
         return counts
+
+    # ---- the gig finder ---------------------------------------------------------------------
+
+    def gig_by_url(self, url: str) -> GigRow | None:
+        """The gig we already have for this ad's URL, if any (so we don't read it twice)."""
+        with Session(self.engine) as s:
+            return s.exec(select(GigRow).where(GigRow.original_url == url)).first()
+
+    def gig_by_fingerprint(self, fingerprint: str) -> GigRow | None:
+        """The same ad seen on another site."""
+        if not fingerprint:
+            return None
+        with Session(self.engine) as s:
+            return s.exec(select(GigRow).where(GigRow.fingerprint == fingerprint)).first()
+
+    def save_gig(self, gig: GigPost, now: str | None = None) -> tuple[str, bool]:
+        """(job_id, is_new). The same ad on two sites keeps one row: the second sighting only
+        refreshes last_seen and adds the platform to seen_on."""
+        stamp = now or self._now()
+        known = self.gig_by_fingerprint(gig.fingerprint) or self.gig_by_url(gig.original_url)
+        if known is not None:
+            platforms = list(dict.fromkeys([*_json_list(known.seen_on), *gig.seen_on]))
+            with self._tx() as c:
+                c.execute(
+                    text(
+                        "UPDATE gig SET last_seen = :now, seen_on = :seen_on, updated_at = :now "
+                        "WHERE job_id = :id"
+                    ),
+                    {"now": stamp, "seen_on": json.dumps(platforms), "id": known.job_id},
+                )
+            return known.job_id, False
+
+        row = GigRow(
+            job_id=gig.job_id,
+            fingerprint=gig.fingerprint,
+            job_title=gig.job_title,
+            employer=gig.employer,
+            original_url=gig.original_url,
+            source_platform=gig.source_platform,
+            source_key=gig.source_key,
+            city=gig.city,
+            district=gig.district,
+            remote_or_onsite=str(gig.remote_or_onsite),
+            job_description=gig.job_description,
+            payment_amount=gig.payment_amount,
+            payment_currency=gig.payment_currency,
+            payment_unit=str(gig.payment_unit),
+            payment_frequency=str(gig.payment_frequency),
+            payment_timing=gig.payment_timing,
+            work_duration=gig.work_duration,
+            working_hours=gig.working_hours,
+            publication_date=gig.publication_date.isoformat() if gig.publication_date else None,
+            application_method=gig.application_method,
+            contact_information=gig.contact_information,
+            physical_effort=str(gig.physical_effort),
+            required_skills=json.dumps(gig.required_skills, ensure_ascii=False),
+            eligibility=gig.eligibility,
+            confidence_score=gig.confidence_score,
+            verdict=str(gig.verdict),
+            reasons=json.dumps(gig.reasons, ensure_ascii=False),
+            seen_on=json.dumps(gig.seen_on, ensure_ascii=False),
+            first_seen=stamp,
+            last_seen=stamp,
+            created_at=stamp,
+            updated_at=stamp,
+        )
+        with Session(self.engine) as s:
+            s.add(row)
+            s.commit()
+            job_id = row.job_id
+        return job_id, True
+
+    def list_gigs(
+        self,
+        verdict: str | None = None,
+        platform: str | None = None,
+        limit: int = 50,
+        since: str | None = None,
+        source_key: str | None = None,
+        include_closed: bool = False,
+    ) -> list[GigRow]:
+        with Session(self.engine) as s:
+            query = select(GigRow)
+            if verdict:
+                query = query.where(GigRow.verdict == verdict)
+            if platform:
+                query = query.where(GigRow.source_platform == platform)
+            if source_key:
+                query = query.where(GigRow.source_key == source_key)
+            if not include_closed:
+                query = query.where(col(GigRow.closed_at).is_(None))
+            if since:
+                query = query.where(GigRow.first_seen >= since)
+            query = query.order_by(col(GigRow.first_seen).desc()).limit(limit)
+            return list(s.exec(query))
+
+    def count_gigs(self, verdict: str | None = None, since: str | None = None) -> int:
+        with Session(self.engine) as s:
+            query = select(func.count()).select_from(GigRow)
+            if verdict:
+                query = query.where(GigRow.verdict == verdict)
+            if since:
+                query = query.where(GigRow.first_seen >= since)
+            return int(s.exec(query).one())
+
+    def count_gigs_for(self, source_key: str, since: str | None = None) -> int:
+        """How many gigs one source has (optionally since a moment)."""
+        with Session(self.engine) as s:
+            query = select(func.count()).select_from(GigRow).where(GigRow.source_key == source_key)
+            if since:
+                query = query.where(GigRow.first_seen >= since)
+            return int(s.exec(query).one())
+
+    def gigs_since(self, since: str) -> list[GigRow]:
+        """Gigs first seen since a moment, newest first."""
+        return self.list_gigs(limit=200, since=since)
+
+    def mark_gigs_notified(self, job_ids: list[str], now: str | None = None) -> None:
+        if not job_ids:
+            return
+        stamp = now or self._now()
+        with self._tx() as c:
+            c.execute(
+                text("UPDATE gig SET notified_at = :now WHERE job_id IN :ids").bindparams(
+                    bindparam("ids", expanding=True)
+                ),
+                {"now": stamp, "ids": job_ids},
+            )
+
+    def gigs_to_recheck(self, older_than: str, limit: int = 5) -> list[GigRow]:
+        """Open gigs we have not looked at for a while: the ad page may be gone by now."""
+        with Session(self.engine) as s:
+            query = (
+                select(GigRow)
+                .where(col(GigRow.closed_at).is_(None), col(GigRow.last_seen) <= older_than)
+                .order_by(col(GigRow.last_seen))
+                .limit(limit)
+            )
+            return list(s.exec(query))
+
+    def mark_gig_closed(self, job_id: str, now: str | None = None) -> None:
+        """The ad page is gone: the ad is closed and must not be offered again."""
+        with self._tx() as c:
+            c.execute(
+                text("UPDATE gig SET closed_at = :now, updated_at = :now WHERE job_id = :id"),
+                {"now": now or self._now(), "id": job_id},
+            )
+
+    # ---- per-source health ------------------------------------------------------------------
+
+    def gig_source(self, key: str) -> GigSource | None:
+        with Session(self.engine) as s:
+            return s.get(GigSource, key)
+
+    def upsert_gig_source(
+        self,
+        key: str,
+        name: str,
+        platform: str,
+        url: str | None = None,
+        manual: bool = False,
+        note: str = "",
+    ) -> GigSource:
+        row = self.gig_source(key)
+        if row is None:
+            row = GigSource(
+                key=key,
+                name=name,
+                platform=platform,
+                url=url,
+                manual=manual,
+                note=note,
+                enabled=True,
+                updated_at=self._now(),
+            )
+            with Session(self.engine) as s:
+                s.add(row)
+                s.commit()
+                s.refresh(row)
+        else:
+            row.name = name
+            row.platform = platform
+            row.url = url or row.url
+            row.manual = manual
+            row.note = note
+            row.updated_at = self._now()
+            with Session(self.engine) as s:
+                s.add(row)
+                s.commit()
+        return row
+
+    def set_gig_source_result(
+        self,
+        key: str,
+        *,
+        ok: bool,
+        error: str | None = None,
+        listings: int = 0,
+        gigs: int = 0,
+        url: str | None = None,
+    ) -> None:
+        """Record how a scan went: the last good read, the error, and the totals."""
+        with self._tx() as c:
+            exists = c.execute(
+                text("SELECT 1 FROM gig_source WHERE key = :key"), {"key": key}
+            ).first()
+            if exists is None:
+                return
+            if ok:
+                c.execute(
+                    text(
+                        "UPDATE gig_source SET last_ok = :now, last_error = NULL, "
+                        "listings_total = listings_total + :listings, "
+                        "gigs_total = gigs_total + :gigs, "
+                        "last_listings = :listings, updated_at = :now "
+                        "WHERE key = :key"
+                    ),
+                    {"now": self._now(), "listings": listings, "gigs": gigs, "key": key},
+                )
+            else:
+                c.execute(
+                    text(
+                        "UPDATE gig_source SET last_error = :error, error_count = error_count + 1, "
+                        "updated_at = :now WHERE key = :key"
+                    ),
+                    {"now": self._now(), "error": (error or "")[:400], "key": key},
+                )
+
+    def gig_sources(self) -> list[GigSource]:
+        with Session(self.engine) as s:
+            return list(s.exec(select(GigSource).order_by(col(GigSource.key))))
+
+    def reset_gig_source_errors(self, key: str) -> None:
+        with self._tx() as c:
+            c.execute(
+                text("UPDATE gig_source SET error_count = 0, last_error = NULL WHERE key = :key"),
+                {"key": key},
+            )

@@ -23,7 +23,12 @@ def settings(**notify: Any) -> Settings:
     notify.setdefault("dry_run", False)
     return Settings(
         config=AppConfig.model_validate(
-            {"sources": {"telegram": {"enabled": False}}, "notify": notify}
+            # The gig scanner reads the network, so tests keep it off.
+            {
+                "sources": {"telegram": {"enabled": False}},
+                "gig": {"enabled": False},
+                "notify": notify,
+            }
         ),
         secrets=Secrets.model_validate(
             {

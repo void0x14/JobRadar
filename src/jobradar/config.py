@@ -267,6 +267,15 @@ class SourcesConfig(_Strict):
     whatsapp: WhatsAppSourceConfig = Field(default_factory=WhatsAppSourceConfig)
 
 
+class GigConfig(_Strict):
+    """The Türkiye daily gig finder: how often it looks, and whether it sends mail."""
+
+    enabled: bool = True
+    every_minutes: int = Field(default=30, ge=5, le=720)
+    notify: bool = True  # email the new gigs as they appear
+    max_new_per_source: int = Field(default=20, ge=1, le=200)
+
+
 class LLMConfig(_Strict):
     extract_model: str = "gemini/gemini-flash-lite-latest"
     # fallback: only jobs whose page and post don't state role and company go to the LLM.
@@ -456,6 +465,7 @@ class AppConfig(_Strict):
     """Everything in config.yaml. Every section is optional and has defaults."""
 
     sources: SourcesConfig = Field(default_factory=SourcesConfig)
+    gig: GigConfig = Field(default_factory=GigConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     filters: FiltersConfig = Field(default_factory=FiltersConfig)
     scoring: ScoringConfig = Field(default_factory=ScoringConfig)

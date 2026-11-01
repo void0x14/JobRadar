@@ -27,6 +27,41 @@ JobRadar fixes that:
 - **Alerts you can trust.** An email only when a job is a strong match, you're eligible, it's fresh and it isn't a likely scam. One email per job, a daily cap, a morning and evening digest, and closing-deadline reminders.
 - **Triage from your inbox.** Tap **Shortlist** or **Not interested** in an email or on the dashboard, and JobRadar remembers it, in its own database and in Notion if you use it.
 
+## Türkiye: the daily gig finder
+
+The same agent, pointed at a different question: **where can I earn today?** Not "is this a
+job I want", but "is this work that pays by the day, the hour, the task or the project", in
+Ankara or from anywhere in Turkey.
+
+`jobradar gig scan` reads every source in the list below, reads each new ad, and keeps only
+what is really short-paid work:
+
+- **The payment model is read from the ad, not from "part-time".** A daily wage, an hourly
+  rate, a fee per task and a fee per project are four different things, and each is kept
+  apart. An ad that says only "part-time" is not a gig: it goes to the *uncertain* pile
+  with the others whose pay nobody wrote down.
+- **Full-time, monthly-only and heavy-lifting work is dropped**, with the reason kept
+  ("monthly pay only", "heavy physical work", "on site in İzmir, not Ankara and not
+  remote").
+- **Remote work counts**, wherever the company is.
+- **The same ad on two sites is one row**, and the ad's own structured data (when it has
+  any) is used before the prose: the date it was posted, who is hiring, where, and the pay.
+- **New gigs are emailed as they appear** (`jobradar gig scan`, or automatically while
+  `jobradar run` is up, every `gig.every_minutes`).
+
+Sources, in the order they were built and checked: Eleman.net, İşin Olsun, Telegram
+(public channel previews), R10, Upwork, DataForce, OneForma, RWS TrainAI, OpenTrain AI,
+Bionluk, Armut, Facebook, WhatsApp, Sahibinden, then Kariyer.net, SecretCV, Indeed,
+LinkedIn, the Ankara city hall, Contra, Mindrift, Corpshore, Rise Data Labs and TELUS
+Digital.
+
+`jobradar gig validate` runs nine checks against each of them (can we reach it, can we read
+the list, the ad, the link, the date, the pay, the place, do the results dedupe, does a
+second scan find the same ads) and prints what each source can and cannot do. Sources that
+answer a challenge page or a 403 are reported as blocked: nothing is worked around. Facebook
+and WhatsApp groups are not scraped at all; their ads come in through `jobradar gig add`,
+which takes the text you paste or forward.
+
 ## How it works
 
 ```mermaid
@@ -91,7 +126,7 @@ Anything you write outside the agent-owned "JobRadar" toggle on a page is never 
 
 ## Quick start
 
-**You need:** Python 3.11+ and [uv](https://docs.astral.sh/uv/), a Gmail account (for alerts, with an app password), and a free [Gemini](https://aistudio.google.com/) or [Groq](https://console.groq.com/) API key.
+**You need:** Python 3.11+ and [uv](https://docs.astral.sh/uv/), a Gmail account (for alerts, with an app password), and a model: a free [Gemini](https://aistudio.google.com/) or [Groq](https://console.groq.com/) API key, or the local servers that JobRadar installs for you (no key at all, see [Local model servers](#local-model-servers-no-api-key)).
 
 ```bash
 git clone https://github.com/ThePlator/JobRadar.git
@@ -127,7 +162,7 @@ JobRadar uses three files. All are validated at start-up, and a bad value stops 
 | `EMAIL_ADDRESS`, `EMAIL_APP_PASSWORD` | Your email and an app password ([Gmail](https://myaccount.google.com/apppasswords)); used to send alerts and read your own button replies |
 | `NOTIFY_TO` | Where alerts and digests go (defaults to `EMAIL_ADDRESS`) |
 | `NOTION_TOKEN`, `NOTION_DATABASE_ID` | A Notion internal integration, shared with your database (not needed with `notion.enabled: false`) |
-| `GEMINI_API_KEY` or `GROQ_API_KEY` | Google AI Studio or Groq console: extraction fallback and matching. Without one, jobs are read from page data and post labels only and scored by the skills rule |
+| `GEMINI_API_KEY` or `GROQ_API_KEY` | Google AI Studio or Groq console: extraction fallback and matching. Not needed with the local servers. Without any model, jobs are read from page data and post labels only and scored by the skills rule |
 
 ### `config.yaml`: what to watch and how to filter
 
@@ -142,9 +177,15 @@ sources:
     workday: {NVIDIA: nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite}
 
 llm:
-  extract_model: "gemini/gemini-flash-lite-latest"
+  extract_model: "gemini-web/gemini-auto"
   extract_mode: fallback    # LLM only when page data and post labels miss role or company
-  writer_model: "gemini/gemini-flash-latest"
+  writer_model: "gemini-web/gemini-auto"
+  fallback_models: ["deepseek-web/deepseek-chat"]
+  endpoints:
+    gemini-web:
+      base_url: "http://127.0.0.1:4981/openai/v1"
+    deepseek-web:
+      base_url: "http://127.0.0.1:9655/v1"
   daily_budget_inr: 15
 
 filters:
@@ -165,6 +206,26 @@ matching:
 ```
 
 Changing `weights` re-ranks your jobs from stored answers at the next start, with no new model calls. Editing `profile.yaml` or `filters` matches open jobs again. `jobradar boards add <link>` adds a company board after checking it exists. [config.example.yaml](config.example.yaml) lists every setting.
+
+### Local model servers (no API key)
+
+JobRadar can run the model itself, on your own machine, so you never hand over an API key:
+
+- **Gemini Web**: [gemini-web-to-api](https://github.com/ntthanh2603/gemini-web-to-api) turns your signed-in Gemini web session into a local API. It needs your browser cookies, so it answers as you.
+- **DeepSeek Web**: [FreeDeepseekAPI](https://github.com/atharvotech/FreeDeepseekAPI-EN) does the same for DeepSeek. It needs one login, and it is the fallback when Gemini can't answer.
+
+Both speak the OpenAI API on 127.0.0.1, so JobRadar calls them like any other provider, and no key is needed. Install, start and switch between them:
+
+```bash
+uv run jobradar llm setup --cookies ~/cookies.json   # clones both servers, builds, sets the cookie
+uv run jobradar llm start                            # runs them on 127.0.0.1
+uv run jobradar llm                                 # what they offer and which model is in use
+uv run jobradar llm use gemini-web/gemini-auto      # switch the model
+uv run jobradar llm test                            # one real question, so you see it answer
+uv run jobradar llm login                           # the DeepSeek login (one time)
+```
+
+The servers are installed in `services/` (git-ignored) and their logs are in `data/local-llm/`. `jobradar run` starts them for you when the config points at one. The cookie file is your Google session: keep it out of the repository and off shared machines.
 
 ### `profile.yaml`: what the matcher knows about you
 
@@ -187,6 +248,13 @@ Every command with examples, log reading, settings and fixes: [docs/COMMANDS.md]
 | `jobradar skills` | Skills your good matches ask for that your profile lacks |
 | `jobradar stats [--days 7]` | Posts, jobs, reposts merged, hidden ads, your funnel, failed tasks |
 | `jobradar retry --failed` | Re-queue failed tasks |
+| `jobradar llm` | The local model servers: what they offer, which model is in use |
+| `jobradar llm use <provider/model>` | Switch the model (and the fallback chain stays as it is) |
+| `jobradar gig scan` | Scan every source for daily, hourly, per-task and per-project work |
+| `jobradar gig list` | The gigs found (or the uncertain ones, or the dropped ones) |
+| `jobradar gig sources` | How each source is doing: last read, errors, ads found |
+| `jobradar gig validate` | Run the nine source checks and print the report |
+| `jobradar gig add` | Add an ad by hand (Facebook and WhatsApp) |
 
 You can also add jobs by forwarding any email, message text or link to your JobRadar mail folder (for Gmail: a `JobRadar` label with a filter).
 
@@ -197,6 +265,7 @@ You can also add jobs by forwarding any email, message text or link to your JobR
 - **Email stays narrow.** JobRadar uses an app password and emails only you. From your inbox it reads only its own button emails, which are signed and only accepted from your address.
 - **Read-only on Telegram.** JobRadar reads with your account, only the chats you list. It never sends messages, joins groups or messages recruiters.
 - **You submit every application.** No auto-apply and no scraping behind logins. Company boards are read through their public job APIs; watched pages obey robots.txt.
+- **Nothing is scraped around a block.** A source that answers 403 or a bot challenge is reported as blocked and left alone. The gig finder reads public pages and public APIs only, and the ads that need an account (Facebook and WhatsApp groups) come in by hand.
 - **Prompt-injection aware.** Job pages are passed to the LLM as delimited data, outputs are schema-validated, and the model has no tools.
 - **Guard your session file.** `data/tg.session` gives full access to your Telegram account. It is `chmod 600` and git-ignored; never share it.
 
