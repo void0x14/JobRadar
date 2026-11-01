@@ -1405,8 +1405,8 @@ class Repo:
                 query = query.where(GigRow.first_seen >= since)
             return int(s.exec(query).one())
 
-    def count_gigs_for(self, source_key: str, since: str | None = None) -> int:
-        """How many gigs one source has (optionally since a moment)."""
+    def count_ads_for(self, source_key: str, since: str | None = None) -> int:
+        """How many ads one source has (optionally since a moment)."""
         with Session(self.engine) as s:
             query = select(func.count()).select_from(GigRow).where(GigRow.source_key == source_key)
             if since:

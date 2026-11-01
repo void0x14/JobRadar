@@ -245,7 +245,7 @@ async def validate_source(
         report.listings_total = state.listings_total
         report.gigs_total = state.gigs_total
     since = (datetime.now(UTC) - timedelta(days=DAYS)).isoformat()
-    report.gigs_24h = repo.count_gigs_for(adapter.key, since)
+    report.gigs_24h = repo.count_ads_for(adapter.key, since)
     return report
 
 
@@ -285,7 +285,8 @@ def render(reports: list[SourceReport]) -> str:
         out.append(
             f"  son başarılı tarama: {r.last_ok or 'hiç'} · hata: {r.error_count} · "
             f"toplam ilan: {r.listings_total} · kısa süreli iş: {r.gigs_total} "
-            f"(son 24 saat: {r.gigs_24h}) · doğrulamada sınıflandırılan: {r.classified_gigs}"
+            f"· son 24 saatte bulunan ilan: {r.gigs_24h} "
+            f"· doğrulamada sınıflandırılan: {r.classified_gigs}"
         )
         if r.manual_note:
             out.append(f"  not: {r.manual_note}")
