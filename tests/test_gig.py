@@ -98,7 +98,8 @@ def test_a_daily_shift_with_a_monthly_wage_is_not_a_daily_rate() -> None:
         url="https://x.test/38",
         platform="test",
     )
-    assert gig.verdict == Verdict.UNCERTAIN
+    assert gig.verdict == Verdict.EXCLUDED
+    assert "monthly" in " ".join(gig.reasons)
 
 
 def test_a_headcount_is_not_a_wage() -> None:

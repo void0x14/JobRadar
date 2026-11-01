@@ -312,18 +312,22 @@ def extract_payment(text: str) -> tuple[float | None, str | None, PaymentUnit, P
     unit = PaymentUnit.UNKNOWN
     unit_at = -1
     unit_end = -1
+    # Every place the text names a payment model, in reading order. The first one that
+    # stands on its own (money next to it, no work schedule around it) wins.
+    candidates: list[tuple[int, int, PaymentUnit]] = []
     for candidate, pattern in _UNIT_RE:
-        found = pattern.search(text)
-        if found and (unit_at < 0 or found.start() < unit_at):
-            unit, unit_at, unit_end = candidate, found.start(), found.end()
-    if unit_at >= 0 and _SCHEDULE.search(text[max(0, unit_at - 30) : unit_end + 40]):
-        unit, unit_at, unit_end = PaymentUnit.UNKNOWN, -1, -1
-    if unit_at >= 0 and unit in (PaymentUnit.DAILY, PaymentUnit.WEEKLY):
-        # "günlük raporlama" and "haftalık toplantı" are not payment models: the word has to
-        # come with the money ("günlük ücret", "haftalık 4.000 TL") to count as one.
-        near = text[max(0, unit_at - 30) : unit_end + 40]
-        if not _PAY_WORD.search(near) and not _MONEY_RE.search(near) and not _big_number(near):
-            unit, unit_at, unit_end = PaymentUnit.UNKNOWN, -1, -1
+        for found in pattern.finditer(text):
+            candidates.append((found.start(), found.end(), candidate))
+    for start, end, candidate in sorted(candidates):
+        near = text[max(0, start - 60) : end + 60]
+        if _SCHEDULE.search(near):
+            continue  # "günlük 8 saat": when the work happens, not what it pays
+        if candidate in (PaymentUnit.DAILY, PaymentUnit.WEEKLY) and not (
+            _PAY_WORD.search(near) or _MONEY_RE.search(near) or _big_number(near)
+        ):
+            continue  # "günlük raporlama", "haftalık toplantı": not a payment model
+        unit, unit_at, unit_end = candidate, start, end
+        break
 
     amount: float | None = None
     currency: str | None = None
