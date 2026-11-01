@@ -1061,18 +1061,31 @@ def llm_stop(
 
 @llm_app.command("login")
 def llm_login() -> None:
-    """Log in to DeepSeek Web, so the fallback can answer (one time)."""
+    """Give the DeepSeek fallback your login, so it can answer (one time)."""
     import os
     import shutil
     import subprocess
 
-    import httpx
-
-    from jobradar.local_llm import SERVICES, services_dir
+    from jobradar.local_llm import SERVICES, deepseek_token_from_chrome, services_dir
 
     path = services_dir() / SERVICES["deepseek-web"].directory
     if not path.is_dir():
         _fail("DeepSeek isn't installed: run 'jobradar llm setup' first.")
+
+    chrome = _chrome_profile()
+    if chrome is not None:
+        token = deepseek_token_from_chrome(chrome)
+        if token:
+            cookie = _deepseek_cookie(chrome)
+            from jobradar.local_llm import setup_deepseek
+
+            setup_deepseek(cookie, token)
+            typer.secho(f"Read your DeepSeek login from {chrome}.", fg="green")
+            _check_deepseek()
+            return
+        typer.echo(f"No DeepSeek login in {chrome}.")
+    typer.echo("Log in to DeepSeek in Chrome, then run this again.")
+
     node = shutil.which("node")
     if node is None:
         _fail("Node.js is needed for the DeepSeek login (https://nodejs.org).")
@@ -1090,7 +1103,58 @@ def llm_login() -> None:
     )
     if result != 0:
         _fail("The DeepSeek login didn't finish. Run 'jobradar llm login' again.")
-    from jobradar.local_llm import LocalLLMError, ask
+    _check_deepseek()
+
+
+def _chrome_profile() -> Path | None:
+    """A Chrome profile that has a DeepSeek session, when there is one."""
+    import os
+    from pathlib import Path
+
+    roots = [
+        Path(os.environ.get("CHROME_USER_DATA", Path.home() / ".config/google-chrome")),
+        Path.home() / ".config/chromium",
+    ]
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for profile in sorted(root.iterdir()):
+            try:
+                if not profile.is_dir():
+                    continue
+                cookies = profile / "Cookies"
+                if not cookies.is_file():
+                    continue
+                if b"deepseek" in cookies.read_bytes():
+                    return profile
+            except OSError:
+                continue
+    return None
+
+
+def _deepseek_cookie(profile: Path) -> str:
+    """The DeepSeek cookies of a Chrome profile, as a Cookie header."""
+    import sqlite3
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+    try:
+        tmp_path.write_bytes((profile / "Cookies").read_bytes())
+        with sqlite3.connect(tmp_path) as db:
+            rows = db.execute(
+                "select name, value from cookies where host_key like '%deepseek.com'"
+            ).fetchall()
+    finally:
+        tmp_path.unlink(missing_ok=True)
+    return "; ".join(f"{name}={value}" for name, value in rows if value)
+
+
+def _check_deepseek() -> None:
+    """Start the DeepSeek server and ask it something, so the login is proven."""
+    import httpx
+
+    from jobradar.local_llm import SERVICES, LocalLLMError, ask
     from jobradar.local_llm import start as start_service
 
     service = SERVICES["deepseek-web"]

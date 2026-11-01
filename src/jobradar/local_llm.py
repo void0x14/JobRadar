@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -106,6 +107,79 @@ def cookie_header(export: Path) -> str:
     return header
 
 
+def deepseek_token_from_chrome(profile: Path) -> str | None:
+    """The DeepSeek token in a Chrome profile's local storage, when it has one.
+
+    Chrome keeps the web token in localStorage; the file is LevelDB, so the
+    record is read out of the .ldb/.log files as plain text.
+    """
+    for folder in (
+        profile / "Local Storage" / "leveldb",
+        profile / "Default" / "Local Storage" / "leveldb",
+    ):
+        if not folder.is_dir():
+            continue
+        for file in sorted(folder.iterdir()):
+            if file.suffix not in (".ldb", ".log"):
+                continue
+            try:
+                data = file.read_bytes()
+            except OSError:
+                continue
+            for token in _tokens_in(data):
+                if _token_works(token):
+                    return token
+    return None
+
+
+_TOKEN = re.compile(rb"[A-Za-z0-9+/_-]{40,80}")
+_KEYS = (b"userToken", b"userT")
+
+
+def _tokens_in(data: bytes) -> list[str]:
+    """The candidate tokens near the "userToken" key.
+
+    Chrome writes the localStorage value as a compact record, so the token is
+    found by its shape: a long base64-ish run right after the key.
+    """
+    found: list[str] = []
+    for key in _KEYS:
+        key_at = data.find(key)
+        while key_at != -1:
+            window = data[key_at : key_at + 400]
+            for match in _TOKEN.finditer(window):
+                token = match.group(0).decode()
+                if token not in found:
+                    found.append(token)
+            key_at = data.find(key, key_at + 1)
+    return found
+
+
+def _token_works(token: str) -> bool:
+    """Whether DeepSeek accepts the token (one cheap API call)."""
+    import urllib.error
+    import urllib.request
+
+    request = urllib.request.Request(
+        "https://chat.deepseek.com/api/v0/chat/create_pow_challenge",
+        data=json.dumps({"target_path": "/api/v0/chat/completion"}).encode(),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+            "Origin": "https://chat.deepseek.com",
+            "Referer": "https://chat.deepseek.com/",
+            "x-client-platform": "web",
+            "x-client-version": "2.0.0",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:  # noqa: S310 (our URL)
+            return "biz_data" in response.read().decode()
+    except (urllib.error.URLError, OSError, ValueError):
+        return False
+
+
 def gemini_env(header: str) -> str:
     """The .env the Gemini Web server reads."""
     safe = header.replace("\\", "\\\\").replace('"', '\\"')
@@ -167,6 +241,36 @@ def setup(cookies: Path | None = None) -> list[str]:
         )
         done.append("built the Gemini Web server")
     return done
+
+
+def setup_deepseek(cookie: str, token: str) -> Path:
+    """Give the DeepSeek server the token and the cookie it needs to answer."""
+    path = services_dir() / SERVICES["deepseek-web"].directory / "deepseek-auth.json"
+    path.write_text(
+        json.dumps(
+            {
+                "token": token,
+                "hif_dliq": "",
+                "hif_leim": "",
+                "cookie": cookie,
+                "wasmUrl": "https://fe-static.deepseek.com/chat/static/sha3_wasm_bg.7b9ca65ddd.wasm",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    path.chmod(0o600)
+    return path
+
+
+def write_gemini_cookie(header: str) -> Path:
+    """Give the Gemini Web server the cookie it answers with."""
+    folder = services_dir() / SERVICES["gemini-web"].directory
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / ".env"
+    path.write_text(gemini_env(header), encoding="utf-8")
+    path.chmod(0o600)
+    return path
 
 
 def patch_loopback(directory: Path) -> bool:

@@ -117,3 +117,15 @@ def test_set_fallback_models_can_clear_the_chain() -> None:
 def test_set_fallback_models_needs_an_llm_section() -> None:
     with pytest.raises(LocalLLMError, match="llm:"):
         set_fallback_models("scoring:\n  hide_below: 40\n", ["deepseek-web/deepseek-chat"])
+
+
+def test_the_gemini_cookie_is_written_to_the_server(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("JOBRADAR_SERVICES_DIR", str(tmp_path))
+    from jobradar.local_llm import write_gemini_cookie
+
+    path = write_gemini_cookie("__Secure-1PSID=abc; __Secure-1PSIDTS=def")
+    text = path.read_text()
+    assert 'GEMINI_COOKIES="__Secure-1PSID=abc; __Secure-1PSIDTS=def"' in text
+    assert path.stat().st_mode & 0o077 == 0  # only the owner may read it
