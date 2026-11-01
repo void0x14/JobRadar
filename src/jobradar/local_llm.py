@@ -20,7 +20,7 @@ from pathlib import Path
 
 import httpx
 
-from jobradar.sources.boards.config_edit import _KEY, _block, _find, _parse
+from jobradar.sources.boards.config_edit import _KEY, _block, _child_indent, _find, _parse
 
 log = logging.getLogger(__name__)
 
@@ -365,4 +365,35 @@ def set_models(text: str, extract: str | None = None, writer: str | None = None)
         gap = lines[index][match.end(3) : match.start(4)] if comment else ""
         tail = f"{gap}{comment}" if comment else ""
         lines[index] = f"{old_indent}{old_key}: {shown}{tail}"
+    return "\n".join(lines) + "\n"
+
+
+def set_fallback_models(text: str, models: list[str]) -> str:
+    """Point config.yaml at a fallback chain, keeping the comments and the layout."""
+    lines = text.splitlines()
+    section = _find(lines, "llm", 0, len(lines), -1)
+    if section is None:
+        raise LocalLLMError("config.yaml has no `llm:` section")
+    end = _block(lines, section)
+    indent = _parse(lines[section]).indent
+    shown = "[" + ", ".join(json.dumps(m) for m in models) + "]"
+    index = _find(lines, "fallback_models", section + 1, end, indent)
+    if index is None:
+        lines.insert(end, f"{' ' * (indent + 2)}fallback_models: {shown}")
+        return "\n".join(lines) + "\n"
+    match = _KEY.match(lines[index])
+    if match is None:
+        raise LocalLLMError(
+            "`fallback_models:` in config.yaml can't be edited by me; change it by hand"
+        )
+    old_indent, old_key, old_value, comment = match.groups()
+    if old_value:  # written on one line
+        tail = f"  {comment}" if comment else ""
+        lines[index] = f"{old_indent}{old_key}: {shown}{tail}"
+        return "\n".join(lines) + "\n"
+    stop = _block(lines, index)  # a list under the key
+    step = _child_indent(lines, index + 1, stop, _parse(lines[index]).indent) or (
+        _parse(lines[index]).indent + 2
+    )
+    lines[index + 1 : stop] = [f"{' ' * step}- {json.dumps(m)}" for m in models]
     return "\n".join(lines) + "\n"

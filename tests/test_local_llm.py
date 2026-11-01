@@ -8,6 +8,7 @@ from jobradar.local_llm import (
     cookie_header,
     gemini_env,
     patch_loopback,
+    set_fallback_models,
     set_models,
 )
 
@@ -88,3 +89,31 @@ def test_the_gemini_server_is_bound_to_localhost(tmp_path: Path) -> None:
 
 def test_a_server_without_the_file_is_left_alone(tmp_path: Path) -> None:
     assert patch_loopback(tmp_path) is False
+
+
+def test_set_fallback_models_replaces_a_one_line_chain() -> None:
+    text = 'llm:\n  fallback_models: ["old/model"]  # the chain\n  daily_budget_inr: 15\n'
+    after = set_fallback_models(text, ["deepseek-web/deepseek-chat"])
+    assert 'fallback_models: ["deepseek-web/deepseek-chat"]  # the chain' in after
+
+
+def test_set_fallback_models_replaces_a_list_written_under_the_key() -> None:
+    text = "llm:\n  fallback_models:\n    - old/model\n  daily_budget_inr: 15\n"
+    after = set_fallback_models(text, ["deepseek-web/deepseek-chat"])
+    assert '    - "deepseek-web/deepseek-chat"' in after
+    assert "old/model" not in after
+
+
+def test_set_fallback_models_adds_the_line_when_it_is_missing() -> None:
+    after = set_fallback_models("llm:\n  daily_budget_inr: 15\n", ["deepseek-web/deepseek-chat"])
+    assert '  fallback_models: ["deepseek-web/deepseek-chat"]' in after
+
+
+def test_set_fallback_models_can_clear_the_chain() -> None:
+    after = set_fallback_models(CONFIG, [])
+    assert "fallback_models: []" in after
+
+
+def test_set_fallback_models_needs_an_llm_section() -> None:
+    with pytest.raises(LocalLLMError, match="llm:"):
+        set_fallback_models("scoring:\n  hide_below: 40\n", ["deepseek-web/deepseek-chat"])

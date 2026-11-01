@@ -853,13 +853,25 @@ def llm_use(
         typer.Argument(help="The model to use, e.g. gemini-web/gemini-auto, or a server name"),
     ] = None,
     slot: Annotated[str, typer.Option("--slot", help="both, extract or writer")] = "both",
+    fallback: Annotated[
+        bool, typer.Option("--fallback", help="Set this model as the fallback, not the main one.")
+    ] = False,
+    no_fallback: Annotated[
+        bool, typer.Option("--no-fallback", help="Drop the fallback chain.")
+    ] = False,
 ) -> None:
     """Switch the model JobRadar uses (writes config.yaml)."""
-    from jobradar.config import load_config
-    from jobradar.local_llm import LocalLLMError, endpoint_models, set_models
+    from jobradar.local_llm import (
+        LocalLLMError,
+        endpoint_models,
+        set_models,
+    )
 
     settings = _settings()
     llm_config = settings.config.llm
+    if no_fallback:
+        _write_chain([])
+        return
     if model is None:
         _models_by_server(llm_config.endpoints)
         _fail(
@@ -899,6 +911,11 @@ def llm_use(
             )
     if slot not in ("both", "extract", "writer"):
         _fail("--slot is both, extract or writer.")
+    if fallback:
+        _write_chain([model])
+        typer.secho(f"Now using {model} as the fallback.", fg="green")
+        typer.echo("Restart 'jobradar run' to pick it up.")
+        return
     try:
         before = CONFIG_PATH.read_text()
         after = set_models(
@@ -909,14 +926,34 @@ def llm_use(
     except (OSError, LocalLLMError) as e:
         _fail(str(e))
         raise
+    _save(after, before)
+    typer.secho(f"Now using {model} for {slot}.", fg="green")
+    typer.echo("Restart 'jobradar run' to pick it up.")
+
+
+def _write_chain(models: list[str]) -> None:
+    """Replace the fallback chain in config.yaml."""
+    from jobradar.local_llm import LocalLLMError, set_fallback_models
+
+    try:
+        before = CONFIG_PATH.read_text()
+        after = set_fallback_models(before, models)
+    except (OSError, LocalLLMError) as e:
+        _fail(str(e))
+        raise
+    _save(after, before)
+
+
+def _save(after: str, before: str) -> None:
+    """Write config.yaml, and put it back when the new text doesn't load."""
+    from jobradar.config import load_config
+
     CONFIG_PATH.write_text(after)
     try:
         load_config(CONFIG_PATH)
     except ConfigError as e:
         CONFIG_PATH.write_text(before)
         _fail(f"Left config.yaml unchanged: {e}")
-    typer.secho(f"Now using {model} for {slot}.", fg="green")
-    typer.echo("Restart 'jobradar run' to pick it up.")
 
 
 @llm_app.command("test")
