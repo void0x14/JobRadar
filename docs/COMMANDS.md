@@ -381,6 +381,7 @@ cp -r data data-backup
 | `daily LLM budget reached` | Wait until midnight, or raise `llm.daily_budget_inr` and restart |
 | The local model server doesn't answer | `jobradar llm` shows which one is down; `jobradar llm start` runs it again, and `jobradar llm setup --cookies <file>` gives it a fresh cookie. Its log is in `data/local-llm/` |
 | The local model server says "not logged in" | The DeepSeek fallback needs one login: `jobradar llm login` |
+| The local model server says "no session" | Your Gemini cookie expired. Export it again from a signed-in gemini.google.com tab and run `jobradar llm setup --cookies <file>`, then `jobradar llm stop` and `jobradar llm start` |
 | A good job was hidden | Look at its reason in the log or Notion; adjust `scoring.hide_below`, `matching.branch_strict` or `filters`, or tell us in an issue |
 | An ad shows up as a job | Add its link to `links.deny`, or report it with the "Ad or link" issue template |
 | Tasks failed | `jobradar retry --failed`, then make sure JobRadar is running |
