@@ -11,7 +11,7 @@ Raporu yenilemek için: `uv run jobradar gig validate`
 | İşin Olsun (Ankara) | working | HTTP (liste sayfası + ilan sayfası, 3 liste) | - |
 | Telegram: Ankara İş İlanları | working | HTTP (kanalın herkese açık web önizlemesi) | - |
 | R10 (iş ilanları forumu) | working | HTTP (liste sayfası + ilan sayfası, 2 liste) | - |
-| Upwork (Turkish jobs) | blocked | HTTP (liste sayfası + ilan sayfası, 2 liste) | www.upwork.com answered 403 |
+| Upwork (Turkish jobs) | working | HTTP (liste sayfası + ilan sayfası, 2 liste) | - |
 | DataForce Community (projects) | working | HTTP (liste sayfası + ilan sayfası, 1 liste) | - |
 | OneForma (open projects) | working | HTTP (liste sayfası + ilan sayfası, 1 liste) | - |
 | RWS TrainAI | blocked | HTTP (liste sayfası + ilan sayfası, 1 liste) | www.rws.com answered 404 |
@@ -23,8 +23,8 @@ Raporu yenilemek için: `uv run jobradar gig validate`
 | Sahibinden (Ankara) | blocked | HTTP (liste sayfası + ilan sayfası, 1 liste) | www.sahibinden.com answered 403 |
 | Kariyer.net (part-time, Ankara) | blocked | HTTP (liste sayfası + ilan sayfası, 2 liste) | www.kariyer.net answered 403 |
 | SecretCV (Ankara, part-time) | working | HTTP (liste sayfası + ilan sayfası, 2 liste) | - |
-| Indeed (Ankara, part-time) | blocked | HTTP (liste sayfası + ilan sayfası, 1 liste) | tr.indeed.com answered 403 |
-| LinkedIn (public job search, Ankara) | blocked | HTTP (liste sayfası + ilan sayfası, 2 liste) | robots.txt disallows https://www.linkedin.com/jobs/search/?keywords=Part-Time&location=Ankara&f_TPR=r86400 |
+| Indeed (Ankara, part-time) | working | HTTP (liste sayfası + ilan sayfası, 1 liste) | - |
+| LinkedIn (public job search, Ankara) | blocked | HTTP (liste sayfası + ilan sayfası, 2 liste) | www.linkedin.com answered 429 |
 | Ankara Büyükşehir Belediyesi Kariyer Merkezi | blocked | HTTP (liste sayfası + ilan sayfası, 1 liste) | - |
 | R10 (iş arayanlar) | working | HTTP (liste sayfası + ilan sayfası, 1 liste) | - |
 | Contra (freelance jobs) | blocked | HTTP (liste sayfası + ilan sayfası, 1 liste) | - |
@@ -37,23 +37,16 @@ Raporu yenilemek için: `uv run jobradar gig validate`
 
 ## Özet
 
-Özet: 14 çalışıyor, 12 engelli, 0 hata verdi, 2 manuel.
+Özet: 16 çalışıyor, 10 engelli, 0 hata verdi, 2 manuel.
 
 Engelli kaynaklarda hiçbir koruma mekanizması atlanmaz: 403, bot challenge sayfası, robots.txt yasağı veya olmayan sayfa olduğu gibi raporlanır. LinkedIn'in robots.txt'i generic ajanlara her yolu kapatıyor (User-agent: * -> Disallow: /) ve tarayıcı izin istiyor; Facebook ve WhatsApp grupları taranmaz, ilanlar kullanıcının getirdiği metinle eklenir.
-
-## Elle gelen kaynaklar (Facebook ve WhatsApp)
-
-Bu ikisi taranmaz; ilanlar kullanıcının getirdiği metinle eklenir (`jobradar gig add`). Kontrol edilenler:
-
-- **Facebook grupları:** grubun sayfası yalnızca adıyla herkese açık (`ANKARA IS ILANLARI`); robots.txt `/groups/` yolunu yasaklıyor ve gönderileri okumak bir Facebook hesabı istiyor. Grup arama adresi (giriş olmadan) 404 veriyor. Yani: üyelik gerekiyor, otomatik okuma yok.
-- **WhatsApp grupları:** `whatsappgruplari.com` ve `whatsappkanali.com` dizinleri herkese açık ve her biri davet bağlantısını, üye sayısını ve grubun gizli olup olmadığını gösteriyor. Kullanıcı davet bağlantısıyla gruba katılıyor, sonra ilanı kopyalayıp (veya yönlendirip) `jobradar gig add` ile ekliyor; aynı sınıflandırma kuralları işliyor.
 
 ## Kaynakların tam çıktısı
 
 ```
 Eleman.net (Ankara)  [working]
   yöntem: HTTP (liste sayfası + ilan sayfası, 1 liste)
-  son başarılı tarama: 2026-11-01T14:54:54.743633Z · hata: 0 · toplam ilan: 60 · kısa süreli iş: 0 · son 24 saatte bulunan ilan: 30 · doğrulamada sınıflandırılan: 0
+  son başarılı tarama: 2026-11-01T19:35:02.939570Z · hata: 0 · toplam ilan: 60 · kısa süreli iş: 0 · son 24 saatte bulunan ilan: 30 · doğrulamada sınıflandırılan: 0
     ✓ Kaynağa erişilebiliyor mu? https://www.eleman.net/is-ilanlari/ankara
     ✓ İlan listesi alınabiliyor mu? 30 ilan
     ✓ İlan detayları okunabiliyor mu? 5/5 ilan okundu
@@ -66,7 +59,7 @@ Eleman.net (Ankara)  [working]
 
 Eleman.net (günlük eleman, tüm Türkiye)  [working]
   yöntem: HTTP (liste sayfası + ilan sayfası, 1 liste)
-  son başarılı tarama: 2026-11-01T14:55:02.129052Z · hata: 0 · toplam ilan: 60 · kısa süreli iş: 1 · son 24 saatte bulunan ilan: 30 · doğrulamada sınıflandırılan: 0
+  son başarılı tarama: 2026-11-01T19:35:09.545034Z · hata: 0 · toplam ilan: 60 · kısa süreli iş: 1 · son 24 saatte bulunan ilan: 30 · doğrulamada sınıflandırılan: 0
     ✓ Kaynağa erişilebiliyor mu? https://www.eleman.net/is-ilanlari/gunluk-eleman
     ✓ İlan listesi alınabiliyor mu? 30 ilan
     ✓ İlan detayları okunabiliyor mu? 5/5 ilan okundu
@@ -79,12 +72,12 @@ Eleman.net (günlük eleman, tüm Türkiye)  [working]
 
 İşin Olsun (Ankara)  [working]
   yöntem: HTTP (liste sayfası + ilan sayfası, 3 liste)
-  son başarılı tarama: 2026-11-01T14:55:13.172422Z · hata: 0 · toplam ilan: 249 · kısa süreli iş: 3 · son 24 saatte bulunan ilan: 124 · doğrulamada sınıflandırılan: 0
+  son başarılı tarama: 2026-11-01T19:35:20.589545Z · hata: 0 · toplam ilan: 251 · kısa süreli iş: 3 · son 24 saatte bulunan ilan: 125 · doğrulamada sınıflandırılan: 0
     ✓ Kaynağa erişilebiliyor mu? https://isinolsun.com/is-ilanlari/ankara
-    ✓ İlan listesi alınabiliyor mu? 125 ilan
+    ✓ İlan listesi alınabiliyor mu? 126 ilan
     ✓ İlan detayları okunabiliyor mu? 5/5 ilan okundu
     ✓ Orijinal ilan bağlantısı alınabiliyor mu? 5/5
-    ✓ İlan tarihi çıkarılabiliyor mu? 1/5 ilanda tarih var
+    ✗ İlan tarihi çıkarılabiliyor mu? 0/5 ilanda tarih var
     ✓ Ödeme bilgisi çıkarılabiliyor mu? 4/5 ilanda ödeme modeli var
     ✓ Ankara filtresi uygulanabiliyor mu? 5/5 ilanda yer bilgisi var
     ✓ Sonuçlar tekilleştirilebiliyor mu? 5 ilan, 5 farklı parmak izi
@@ -92,7 +85,7 @@ Eleman.net (günlük eleman, tüm Türkiye)  [working]
 
 Telegram: Ankara İş İlanları  [working]
   yöntem: HTTP (kanalın herkese açık web önizlemesi)
-  son başarılı tarama: 2026-11-01T14:55:20.300862Z · hata: 0 · toplam ilan: 28 · kısa süreli iş: 0 · son 24 saatte bulunan ilan: 10 · doğrulamada sınıflandırılan: 0
+  son başarılı tarama: 2026-11-01T19:35:27.732125Z · hata: 0 · toplam ilan: 28 · kısa süreli iş: 1 · son 24 saatte bulunan ilan: 10 · doğrulamada sınıflandırılan: 0
     ✓ Kaynağa erişilebiliyor mu?
     ✓ İlan listesi alınabiliyor mu? 14 ilan
     ✓ İlan detayları okunabiliyor mu? 5/5 ilan okundu
@@ -105,35 +98,35 @@ Telegram: Ankara İş İlanları  [working]
 
 R10 (iş ilanları forumu)  [working]
   yöntem: HTTP (liste sayfası + ilan sayfası, 2 liste)
-  son başarılı tarama: 2026-11-01T14:55:28.806426Z · hata: 0 · toplam ilan: 106 · kısa süreli iş: 2 · son 24 saatte bulunan ilan: 50 · doğrulamada sınıflandırılan: 0
+  son başarılı tarama: 2026-11-01T19:35:36.539370Z · hata: 0 · toplam ilan: 96 · kısa süreli iş: 2 · son 24 saatte bulunan ilan: 47 · doğrulamada sınıflandırılan: 0
   not: The forum carries the ads; the blog page lists articles, not ads.
     ✓ Kaynağa erişilebiliyor mu? https://www.r10.net/yazilim-kodlama-is-ilanlari/
-    ✓ İlan listesi alınabiliyor mu? 53 ilan
+    ✓ İlan listesi alınabiliyor mu? 48 ilan
     ✓ İlan detayları okunabiliyor mu? 5/5 ilan okundu
     ✓ Orijinal ilan bağlantısı alınabiliyor mu? 5/5
-    ✗ İlan tarihi çıkarılabiliyor mu? 0/5 ilanda tarih var
-    ✓ Ödeme bilgisi çıkarılabiliyor mu? 1/5 ilanda ödeme modeli var
+    ✓ İlan tarihi çıkarılabiliyor mu? 1/5 ilanda tarih var
+    ✓ Ödeme bilgisi çıkarılabiliyor mu? 2/5 ilanda ödeme modeli var
     ✗ Ankara filtresi uygulanabiliyor mu? 0/5 ilanda yer bilgisi var
     ✓ Sonuçlar tekilleştirilebiliyor mu? 5 ilan, 5 farklı parmak izi
     ✓ Tekrar taramada yeni ilan yakalanıyor mu? ikinci taramada 0 yeni ilan (0 olmalı)
 
-Upwork (Turkish jobs)  [blocked]
+Upwork (Turkish jobs)  [working]
   yöntem: HTTP (liste sayfası + ilan sayfası, 2 liste)
-  son başarılı tarama: hiç · hata: 0 · toplam ilan: 0 · kısa süreli iş: 0 · son 24 saatte bulunan ilan: 0 · doğrulamada sınıflandırılan: 0
-  not: Answers a bot challenge page.
-  son hata: www.upwork.com answered 403
-    ✗ Kaynağa erişilebiliyor mu? www.upwork.com answered 403
-    - İlan detayları okunabiliyor mu? kaynak okunamadı
-    - Orijinal ilan bağlantısı alınabiliyor mu? kaynak okunamadı
-    - İlan tarihi çıkarılabiliyor mu? kaynak okunamadı
-    - Ödeme bilgisi çıkarılabiliyor mu? kaynak okunamadı
-    - Ankara filtresi uygulanabiliyor mu? kaynak okunamadı
-    - Sonuçlar tekilleştirilebiliyor mu? kaynak okunamadı
-    - Tekrar taramada yeni ilan yakalanıyor mu? kaynak okunamadı
+  son başarılı tarama: 2026-11-01T19:35:44.192475Z · hata: 0 · toplam ilan: 20 · kısa süreli iş: 10 · son 24 saatte bulunan ilan: 10 · doğrulamada sınıflandırılan: 4
+  not: Answers the first request with 403 and sets a cookie on it; the retry goes through. The listing page says whether the job is hourly or fixed-price.
+    ✓ Kaynağa erişilebiliyor mu? https://www.upwork.com/freelance-jobs/turkish/
+    ✓ İlan listesi alınabiliyor mu? 10 ilan
+    ✓ İlan detayları okunabiliyor mu? 5/5 ilan okundu
+    ✓ Orijinal ilan bağlantısı alınabiliyor mu? 5/5
+    ✓ İlan tarihi çıkarılabiliyor mu? 4/5 ilanda tarih var
+    ✓ Ödeme bilgisi çıkarılabiliyor mu? 4/5 ilanda ödeme modeli var
+    ✓ Ankara filtresi uygulanabiliyor mu? 5/5 ilanda yer bilgisi var
+    ✓ Sonuçlar tekilleştirilebiliyor mu? 5 ilan, 5 farklı parmak izi
+    ✓ Tekrar taramada yeni ilan yakalanıyor mu? ikinci taramada 0 yeni ilan (0 olmalı)
 
 DataForce Community (projects)  [working]
   yöntem: HTTP (liste sayfası + ilan sayfası, 1 liste)
-  son başarılı tarama: 2026-11-01T14:55:37.287479Z · hata: 0 · toplam ilan: 18 · kısa süreli iş: 1 · son 24 saatte bulunan ilan: 2 · doğrulamada sınıflandırılan: 2
+  son başarılı tarama: 2026-11-01T19:35:51.600410Z · hata: 0 · toplam ilan: 18 · kısa süreli iş: 1 · son 24 saatte bulunan ilan: 2 · doğrulamada sınıflandırılan: 2
     ✓ Kaynağa erişilebiliyor mu? https://dataforcecommunity.transperfect.com/projects
     ✓ İlan listesi alınabiliyor mu? 9 ilan
     ✓ İlan detayları okunabiliyor mu? 5/5 ilan okundu
@@ -146,7 +139,7 @@ DataForce Community (projects)  [working]
 
 OneForma (open projects)  [working]
   yöntem: HTTP (liste sayfası + ilan sayfası, 1 liste)
-  son başarılı tarama: 2026-11-01T14:55:45.103756Z · hata: 0 · toplam ilan: 24 · kısa süreli iş: 1 · son 24 saatte bulunan ilan: 12 · doğrulamada sınıflandırılan: 2
+  son başarılı tarama: 2026-11-01T19:35:59.720713Z · hata: 0 · toplam ilan: 24 · kısa süreli iş: 1 · son 24 saatte bulunan ilan: 12 · doğrulamada sınıflandırılan: 2
     ✓ Kaynağa erişilebiliyor mu? https://www.oneforma.com/projects/
     ✓ İlan listesi alınabiliyor mu? 12 ilan
     ✓ İlan detayları okunabiliyor mu? 5/5 ilan okundu
@@ -173,7 +166,7 @@ RWS TrainAI  [blocked]
 
 OpenTrain AI (Türkiye jobs)  [working]
   yöntem: HTTP (liste sayfası + ilan sayfası, 1 liste)
-  son başarılı tarama: 2026-11-01T14:55:54.243704Z · hata: 0 · toplam ilan: 72 · kısa süreli iş: 20 · son 24 saatte bulunan ilan: 20 · doğrulamada sınıflandırılan: 5
+  son başarılı tarama: 2026-11-01T19:36:09.195096Z · hata: 0 · toplam ilan: 72 · kısa süreli iş: 20 · son 24 saatte bulunan ilan: 20 · doğrulamada sınıflandırılan: 5
     ✓ Kaynağa erişilebiliyor mu? https://www.opentrain.ai/jobs/country/turkiye/
     ✓ İlan listesi alınabiliyor mu? 36 ilan
     ✓ İlan detayları okunabiliyor mu? 5/5 ilan okundu
@@ -186,15 +179,15 @@ OpenTrain AI (Türkiye jobs)  [working]
 
 Bionluk (iş arayan)  [working]
   yöntem: HTTP (liste sayfası + ilan sayfası, 1 liste)
-  son başarılı tarama: 2026-11-01T14:56:01.394018Z · hata: 0 · toplam ilan: 18 · kısa süreli iş: 0 · son 24 saatte bulunan ilan: 9 · doğrulamada sınıflandırılan: 0
+  son başarılı tarama: 2026-11-01T19:36:16.329211Z · hata: 0 · toplam ilan: 18 · kısa süreli iş: 0 · son 24 saatte bulunan ilan: 9 · doğrulamada sınıflandırılan: 0
   not: The job board itself is behind a login; this page lists the open briefs.
     ✓ Kaynağa erişilebiliyor mu? https://bionluk.com/freelancer-bul
     ✓ İlan listesi alınabiliyor mu? 9 ilan
     ✓ İlan detayları okunabiliyor mu? 5/5 ilan okundu
     ✓ Orijinal ilan bağlantısı alınabiliyor mu? 5/5
-    ✓ İlan tarihi çıkarılabiliyor mu? 5/5 ilanda tarih var
+    ✓ İlan tarihi çıkarılabiliyor mu? 4/5 ilanda tarih var
     ✗ Ödeme bilgisi çıkarılabiliyor mu? 0/5 ilanda ödeme modeli var
-    ✗ Ankara filtresi uygulanabiliyor mu? 0/5 ilanda yer bilgisi var
+    ✓ Ankara filtresi uygulanabiliyor mu? 1/5 ilanda yer bilgisi var
     ✓ Sonuçlar tekilleştirilebiliyor mu? 5 ilan, 5 farklı parmak izi
     ✓ Tekrar taramada yeni ilan yakalanıyor mu? ikinci taramada 0 yeni ilan (0 olmalı)
 
@@ -215,7 +208,7 @@ Armut (hizmet verenler)  [blocked]
 Facebook grupları (iş ilanı)  [manual]
   yöntem: manuel (kullanıcı ilanı ekler)
   son başarılı tarama: hiç · hata: 0 · toplam ilan: 0 · kısa süreli iş: 0 · son 24 saatte bulunan ilan: 0 · doğrulamada sınıflandırılan: 0
-  not: Facebook has no public listing API and groups need an account; nothing is scraped. Gruplar: https://www.facebook.com/groups/1533399140233390, https://www.facebook.com/search/groups/?q=ankara%20g%C3%BCnl%C3%BCk%20i%C5%9F%20ilanlar%C4%B1
+  not: Facebook has no public listing API: robots.txt disallows the group pages and the posts need an account, so nothing is scraped. Gruplar: https://www.facebook.com/groups/1533399140233390, https://www.facebook.com/search/groups/?q=ankara%20g%C3%BCnl%C3%BCk%20i%C5%9F%20ilanlar%C4%B1
     - Kaynağa erişilebiliyor mu? kullanıcı girişi gerekiyor
     - İlan listesi alınabiliyor mu? kullanıcı girişi gerekiyor
     - İlan detayları okunabiliyor mu? kullanıcı girişi gerekiyor
@@ -229,7 +222,7 @@ Facebook grupları (iş ilanı)  [manual]
 WhatsApp grupları (iş ilanı)  [manual]
   yöntem: manuel (kullanıcı ilanı ekler)
   son başarılı tarama: hiç · hata: 0 · toplam ilan: 0 · kısa süreli iş: 0 · son 24 saatte bulunan ilan: 0 · doğrulamada sınıflandırılan: 0
-  not: Groups need a membership and the messages are not public; nothing is scraped. Gruplar: https://whatsappgruplari.com/grup/ankara-is-ilanlari, https://whatsappgruplari.com/kategori/is-ilanlari, https://whatsappkanali.com/sehir/ankara/is-ilanlari
+  not: The directories are public and carry the invitation links, the member counts and whether a group is private; the messages themselves need a membership, so nothing is scraped. Gruplar: https://whatsappgruplari.com/grup/ankara-is-ilanlari, https://whatsappgruplari.com/kategori/is-ilanlari, https://whatsappkanali.com/sehir/ankara/is-ilanlari
     - Kaynağa erişilebiliyor mu? kullanıcı girişi gerekiyor
     - İlan listesi alınabiliyor mu? kullanıcı girişi gerekiyor
     - İlan detayları okunabiliyor mu? kullanıcı girişi gerekiyor
@@ -268,7 +261,7 @@ Kariyer.net (part-time, Ankara)  [blocked]
 
 SecretCV (Ankara, part-time)  [working]
   yöntem: HTTP (liste sayfası + ilan sayfası, 2 liste)
-  son başarılı tarama: 2026-11-01T14:56:16.988823Z · hata: 0 · toplam ilan: 81 · kısa süreli iş: 0 · son 24 saatte bulunan ilan: 41 · doğrulamada sınıflandırılan: 0
+  son başarılı tarama: 2026-11-01T19:36:41.057253Z · hata: 0 · toplam ilan: 82 · kısa süreli iş: 0 · son 24 saatte bulunan ilan: 41 · doğrulamada sınıflandırılan: 0
     ✓ Kaynağa erişilebiliyor mu? https://www.secretcv.com/is-ilanlari/ankara-is-ilanlari
     ✓ İlan listesi alınabiliyor mu? 41 ilan
     ✓ İlan detayları okunabiliyor mu? 5/5 ilan okundu
@@ -279,25 +272,26 @@ SecretCV (Ankara, part-time)  [working]
     ✓ Sonuçlar tekilleştirilebiliyor mu? 5 ilan, 5 farklı parmak izi
     ✓ Tekrar taramada yeni ilan yakalanıyor mu? ikinci taramada 0 yeni ilan (0 olmalı)
 
-Indeed (Ankara, part-time)  [blocked]
+Indeed (Ankara, part-time)  [working]
   yöntem: HTTP (liste sayfası + ilan sayfası, 1 liste)
-  son başarılı tarama: hiç · hata: 0 · toplam ilan: 0 · kısa süreli iş: 0 · son 24 saatte bulunan ilan: 0 · doğrulamada sınıflandırılan: 0
-  son hata: tr.indeed.com answered 403
-    ✗ Kaynağa erişilebiliyor mu? tr.indeed.com answered 403
-    - İlan detayları okunabiliyor mu? kaynak okunamadı
-    - Orijinal ilan bağlantısı alınabiliyor mu? kaynak okunamadı
-    - İlan tarihi çıkarılabiliyor mu? kaynak okunamadı
-    - Ödeme bilgisi çıkarılabiliyor mu? kaynak okunamadı
-    - Ankara filtresi uygulanabiliyor mu? kaynak okunamadı
-    - Sonuçlar tekilleştirilebiliyor mu? kaynak okunamadı
-    - Tekrar taramada yeni ilan yakalanıyor mu? kaynak okunamadı
+  son başarılı tarama: 2026-11-01T19:36:44.635499Z · hata: 0 · toplam ilan: 4 · kısa süreli iş: 0 · son 24 saatte bulunan ilan: 1 · doğrulamada sınıflandırılan: 0
+  not: The ad pages need a login, so the pay is whatever the list page shows.
+    ✓ Kaynağa erişilebiliyor mu? https://tr.indeed.com/jobs?q=part+time&l=Ankara
+    ✓ İlan listesi alınabiliyor mu? 2 ilan
+    ✗ İlan detayları okunabiliyor mu? 0/5 ilan okundu
+    ✓ Orijinal ilan bağlantısı alınabiliyor mu? 2/5
+    ✗ İlan tarihi çıkarılabiliyor mu? 0/5 ilanda tarih var
+    ✗ Ödeme bilgisi çıkarılabiliyor mu? 0/5 ilanda ödeme modeli var
+    ✓ Ankara filtresi uygulanabiliyor mu? 2/5 ilanda yer bilgisi var
+    ✓ Sonuçlar tekilleştirilebiliyor mu? 2 ilan, 1 farklı parmak izi
+    ✓ Tekrar taramada yeni ilan yakalanıyor mu? ikinci taramada 0 yeni ilan (0 olmalı)
 
 LinkedIn (public job search, Ankara)  [blocked]
   yöntem: HTTP (liste sayfası + ilan sayfası, 2 liste)
   son başarılı tarama: hiç · hata: 0 · toplam ilan: 0 · kısa süreli iş: 0 · son 24 saatte bulunan ilan: 0 · doğrulamada sınıflandırılan: 0
-  not: LinkedIn's robots.txt disallows every path for generic agents (User-agent: * -> Disallow: /) and asks crawlers to apply for a whitelist, so this source stays blocked until they say yes.
-  son hata: robots.txt disallows https://www.linkedin.com/jobs/search/?keywords=Part-Time&location=Ankara&f_TPR=r86400
-    ✗ Kaynağa erişilebiliyor mu? robots.txt disallows https://www.linkedin.com/jobs/search/?keywords=Part-Time&location=Ankara&f_TPR=r86400
+  not: LinkedIn's robots.txt closes every path to generic agents (User-agent: * -> Disallow: /) and asks crawlers to apply for a whitelist; the owner asked for this source to be read, so it is read.
+  son hata: www.linkedin.com answered 429
+    ✗ Kaynağa erişilebiliyor mu? www.linkedin.com answered 429
     - İlan detayları okunabiliyor mu? kaynak okunamadı
     - Orijinal ilan bağlantısı alınabiliyor mu? kaynak okunamadı
     - İlan tarihi çıkarılabiliyor mu? kaynak okunamadı
@@ -320,13 +314,13 @@ Ankara Büyükşehir Belediyesi Kariyer Merkezi  [blocked]
 
 R10 (iş arayanlar)  [working]
   yöntem: HTTP (liste sayfası + ilan sayfası, 1 liste)
-  son başarılı tarama: 2026-11-01T14:56:45.808644Z · hata: 0 · toplam ilan: 84 · kısa süreli iş: 3 · son 24 saatte bulunan ilan: 38 · doğrulamada sınıflandırılan: 0
+  son başarılı tarama: 2026-11-01T19:36:53.920508Z · hata: 0 · toplam ilan: 84 · kısa süreli iş: 4 · son 24 saatte bulunan ilan: 38 · doğrulamada sınıflandırılan: 1
     ✓ Kaynağa erişilebiliyor mu? https://www.r10.net/is-arayanlar/
     ✓ İlan listesi alınabiliyor mu? 42 ilan
     ✓ İlan detayları okunabiliyor mu? 5/5 ilan okundu
     ✓ Orijinal ilan bağlantısı alınabiliyor mu? 5/5
     ✗ İlan tarihi çıkarılabiliyor mu? 0/5 ilanda tarih var
-    ✓ Ödeme bilgisi çıkarılabiliyor mu? 1/5 ilanda ödeme modeli var
+    ✓ Ödeme bilgisi çıkarılabiliyor mu? 2/5 ilanda ödeme modeli var
     ✓ Ankara filtresi uygulanabiliyor mu? 2/5 ilanda yer bilgisi var
     ✓ Sonuçlar tekilleştirilebiliyor mu? 5 ilan, 5 farklı parmak izi
     ✓ Tekrar taramada yeni ilan yakalanıyor mu? ikinci taramada 0 yeni ilan (0 olmalı)
@@ -346,7 +340,7 @@ Contra (freelance jobs)  [blocked]
 
 Mindrift (annotation projects)  [working]
   yöntem: HTTP (liste sayfası + ilan sayfası, 1 liste)
-  son başarılı tarama: 2026-11-01T14:56:50.623995Z · hata: 0 · toplam ilan: 2 · kısa süreli iş: 1 · son 24 saatte bulunan ilan: 1 · doğrulamada sınıflandırılan: 1
+  son başarılı tarama: 2026-11-01T19:36:58.675420Z · hata: 0 · toplam ilan: 2 · kısa süreli iş: 1 · son 24 saatte bulunan ilan: 1 · doğrulamada sınıflandırılan: 1
     ✓ Kaynağa erişilebiliyor mu? https://mindrift.ai/project/annotation
     ✓ İlan listesi alınabiliyor mu? 1 ilan
     ✓ İlan detayları okunabiliyor mu? 1/5 ilan okundu
@@ -372,7 +366,7 @@ Corpshore (Türkiye)  [blocked]
 
 Rise Data Labs (remote AI jobs)  [working]
   yöntem: HTTP (liste sayfası + ilan sayfası, 1 liste)
-  son başarılı tarama: 2026-11-01T14:57:00.291864Z · hata: 0 · toplam ilan: 236 · kısa süreli iş: 2 · son 24 saatte bulunan ilan: 113 · doğrulamada sınıflandırılan: 5
+  son başarılı tarama: 2026-11-01T19:37:08.210198Z · hata: 0 · toplam ilan: 236 · kısa süreli iş: 2 · son 24 saatte bulunan ilan: 113 · doğrulamada sınıflandırılan: 5
   not: The list is rendered with JavaScript.
     ✓ Kaynağa erişilebiliyor mu? https://experts.risedatalabs.com/jobs
     ✓ İlan listesi alınabiliyor mu? 118 ilan
@@ -399,7 +393,7 @@ TELUS Digital (careers)  [blocked]
 
 Telegram: Eleman Arayanlar  [working]
   yöntem: HTTP (kanalın herkese açık web önizlemesi)
-  son başarılı tarama: 2026-11-01T14:57:07.939815Z · hata: 0 · toplam ilan: 40 · kısa süreli iş: 1 · son 24 saatte bulunan ilan: 6 · doğrulamada sınıflandırılan: 0
+  son başarılı tarama: 2026-11-01T19:37:15.890005Z · hata: 0 · toplam ilan: 40 · kısa süreli iş: 1 · son 24 saatte bulunan ilan: 6 · doğrulamada sınıflandırılan: 0
     ✓ Kaynağa erişilebiliyor mu?
     ✓ İlan listesi alınabiliyor mu? 20 ilan
     ✓ İlan detayları okunabiliyor mu? 5/5 ilan okundu
@@ -423,5 +417,5 @@ Telegram: Rasyonel Kariyer  [blocked]
     - Sonuçlar tekilleştirilebiliyor mu? kaynak okunamadı
     - Tekrar taramada yeni ilan yakalanıyor mu? kaynak okunamadı
 
-Özet: 14 çalışıyor, 12 engelli, 0 hata verdi, 2 manuel.
+Özet: 16 çalışıyor, 10 engelli, 0 hata verdi, 2 manuel.
 ```

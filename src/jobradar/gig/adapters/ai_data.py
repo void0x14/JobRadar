@@ -5,6 +5,7 @@ from __future__ import annotations
 from jobradar.gig.adapters.base import LinkAdapter
 
 ONEFORMA = LinkAdapter(
+    physical=False,
     key="oneforma",
     name="OneForma (open projects)",
     platform="oneforma",
@@ -13,6 +14,7 @@ ONEFORMA = LinkAdapter(
 )
 
 DATAFORCE = LinkAdapter(
+    physical=False,
     key="dataforce",
     name="DataForce Community (projects)",
     platform="dataforce",
@@ -21,6 +23,7 @@ DATAFORCE = LinkAdapter(
 )
 
 OPENTRAIN = LinkAdapter(
+    physical=False,
     key="opentrain",
     name="OpenTrain AI (Türkiye jobs)",
     platform="opentrain",
@@ -29,6 +32,7 @@ OPENTRAIN = LinkAdapter(
 )
 
 MINDRIFT = LinkAdapter(
+    physical=False,
     key="mindrift",
     name="Mindrift (annotation projects)",
     platform="mindrift",
@@ -37,6 +41,7 @@ MINDRIFT = LinkAdapter(
 )
 
 CORPSHORE = LinkAdapter(
+    physical=False,
     key="corpshore",
     name="Corpshore (Türkiye)",
     platform="corpshore",
@@ -46,6 +51,7 @@ CORPSHORE = LinkAdapter(
 )
 
 RISE = LinkAdapter(
+    physical=False,
     key="rise",
     name="Rise Data Labs (remote AI jobs)",
     platform="rise",
@@ -55,6 +61,7 @@ RISE = LinkAdapter(
 )
 
 TELUS = LinkAdapter(
+    physical=False,
     key="telus",
     name="TELUS Digital (careers)",
     platform="telus",
@@ -64,6 +71,7 @@ TELUS = LinkAdapter(
 )
 
 RWS = LinkAdapter(
+    physical=False,
     key="rws",
     name="RWS TrainAI",
     platform="rws",

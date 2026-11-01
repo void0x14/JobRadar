@@ -4,7 +4,10 @@ per board is enough; the detail page carries the payment, the date and the place
 
 from __future__ import annotations
 
-from jobradar.gig.adapters.base import LinkAdapter
+import re
+from dataclasses import dataclass, replace
+
+from jobradar.gig.adapters.base import LinkAdapter, Listing, WebClient
 
 ELEMAN = LinkAdapter(
     key="eleman",
@@ -79,20 +82,46 @@ LINKEDIN = LinkAdapter(
     ],
     pattern=r"linkedin\.com/jobs/view/",
     max_pages=2,
+    ignore_robots=True,
+    default_city="Ankara",
     note=(
-        "LinkedIn's robots.txt disallows every path for generic agents (User-agent: * -> "
-        "Disallow: /) and asks crawlers to apply for a whitelist, so this source stays blocked "
-        "until they say yes."
+        "LinkedIn's robots.txt closes every path to generic agents (User-agent: * -> Disallow: /) "
+        "and asks crawlers to apply for a whitelist; the owner asked for this source to be read, "
+        "so it is read."
     ),
 )
 
+
 # Both answer 403 with a challenge page: they are in the list so the report can say so.
-INDEED = LinkAdapter(
+@dataclass
+class IndeedAdapter(LinkAdapter):
+    """Indeed's list page answers; its ad pages ask for a login.
+
+    So the list is the source of truth here: the title often names the pay model
+    ("PART TIME ... GUNLUK ODEME"), and the tracking link becomes the stable
+    viewjob link, so the same ad keeps one row.
+    """
+
+    async def scan(self, client: WebClient) -> list[Listing]:
+        listings = await super().scan(client)
+        out: list[Listing] = []
+        for listing in listings:
+            match = re.search(r"[?&]jk=([0-9a-f]+)", listing.url)
+            url = f"https://tr.indeed.com/viewjob?jk={match.group(1)}" if match else listing.url
+            out.append(replace(listing, url=url))
+        return out
+
+
+INDEED = IndeedAdapter(
     key="indeed",
     name="Indeed (Ankara, part-time)",
     platform="indeed",
     list_urls=["https://tr.indeed.com/jobs?q=part+time&l=Ankara"],
-    pattern=r"indeed\.com/viewjob|indeed\.com/jobs/view",
+    pattern=r"tr\.indeed\.com/(?:rc/clk|viewjob)",
+    ignore_robots=True,
+    fetch_details=False,
+    default_city="Ankara",
+    note="The ad pages need a login, so the pay is whatever the list page shows.",
 )
 
 SAHIBINDEN = LinkAdapter(

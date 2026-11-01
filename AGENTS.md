@@ -117,6 +117,14 @@ Everything runs as tasks on a durable SQLite-backed queue (`queue/`), so a resta
 - No em dashes anywhere in what JobRadar writes.
 - JobRadar is the primary project for Backend / SWE roles.
 
+**Gig finder**
+- The gig client sends the headers a browser sends and asks a board that answers 403 once
+  more (the refusal sets the cookie that lets the second request through). No browser.
+- robots.txt is ignored per source where the owner asked for it (LinkedIn), and the report
+  says which source was read that way.
+- A board that needs a JavaScript challenge (Sahibinden, Kariyer.net) or an account (the
+  Ankara city hall, Indeed's ad pages) stays blocked or manual. It is reported, not forced.
+
 **Data rules**
 - A status changed back within 10 minutes is a misclick and isn't counted anywhere.
 - The statuses are New, Shortlisted, Skipped and Hidden. The old application stages (Applied, Interview, Offer, Rejected, Resume ready) are gone: a job that still carries one becomes Shortlisted or Skipped when the database is opened.

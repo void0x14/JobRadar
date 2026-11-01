@@ -52,7 +52,11 @@ UPWORK = LinkAdapter(
         "https://www.upwork.com/freelance-jobs/software-testing/",
     ],
     pattern=r"upwork\.com/freelance-jobs/apply/",
-    note="Answers a bot challenge page.",
+    context_chars=900,
+    note=(
+        "Answers the first request with 403 and sets a cookie on it; the retry goes through. "
+        "The listing page says whether the job is hourly or fixed-price."
+    ),
 )
 
 CONTRA = LinkAdapter(

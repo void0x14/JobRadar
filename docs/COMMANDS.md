@@ -193,6 +193,10 @@ What it does with each ad:
 `jobradar run` is up the same scan runs every `gig.every_minutes` (30 by default) and the
 new gigs are emailed as they appear.
 
+The pages are fetched with the headers a browser sends, and a board that answers the first
+request with 403 is asked once more (the refusal sets the cookie that lets the second request
+through). That is how Upwork, Indeed and TELUS Digital are read without a browser.
+
 ### `jobradar gig list`
 
 ```bash

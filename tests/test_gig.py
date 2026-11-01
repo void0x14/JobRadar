@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import ClassVar
 
+import httpx
 import pytest
 from sqlalchemy import text
 
@@ -310,13 +311,13 @@ class FakeClient:
         self.pages = pages
         self.requested: list[str] = []
 
-    async def html(self, url: str) -> str:
+    async def html(self, url: str, *, ignore_robots: bool = False) -> str:
         self.requested.append(url)
         if url not in self.pages:
             raise Blocked(f"{url} answered 404")
         return self.pages[url]
 
-    async def text(self, url: str) -> str:
+    async def text(self, url: str, *, ignore_robots: bool = False) -> str:
         return self.pages.get(url, "")
 
 
@@ -394,6 +395,46 @@ async def test_a_blocked_source_is_reported_not_hidden(repo: Repo) -> None:
     assert result.error and "404" in result.error
     state = repo.gig_source("blocked")
     assert state is not None and state.error_count == 1 and state.last_ok is None
+
+
+async def test_a_board_that_answers_403_first_is_asked_again() -> None:
+    """Upwork, Indeed and TELUS answer the first request with 403 and set a cookie on that
+    refusal; the same request again goes through. No browser, no challenge to solve."""
+    from jobradar.gig.adapters.base import WebClient
+
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        if len(calls) == 1:
+            return httpx.Response(403, text="forbidden")
+        return httpx.Response(200, text="<html><body>ilan</body></html>")
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport, follow_redirects=True) as raw:
+        client = WebClient()
+        client.client = raw
+        assert "ilan" in await client.html("https://site.test/list")
+    assert len(calls) == 2
+
+
+async def test_robots_can_be_ignored_per_source() -> None:
+    """The owner's call, per source: the robots.txt rule is skipped and the page is read."""
+    from jobradar.gig.adapters.base import WebClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text="User-agent: *\nDisallow: /\n")
+        return httpx.Response(200, text="<html><body>ilan</body></html>")
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), follow_redirects=True
+    ) as raw:
+        client = WebClient()
+        client.client = raw
+        with pytest.raises(Blocked):
+            await client.html("https://site.test/list")
+        assert "ilan" in await client.html("https://site.test/list", ignore_robots=True)
 
 
 async def test_one_dead_listing_page_does_not_take_the_source_down() -> None:

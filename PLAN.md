@@ -488,7 +488,7 @@ it appears. Not a CV builder, not an application tracker: JobRadar finds and tel
   preview, like the rest of JobRadar)
 - [x] `gig/watcher.py` + `gig.every_minutes`: the same scan runs while `jobradar run` is up
 - [x] `gig/validate.py`: the nine source checks and the report; `docs/GIG_SOURCES.md` holds
-  the run of 1 November 2026 (14 sources work, 12 blocked, 2 manual)
+  the run of 1 November 2026 (16 sources work, 10 blocked, 2 manual)
 - [x] `gig/ingest.py` + `jobradar gig add`: ads from Facebook and WhatsApp groups come in
   by hand, judged by the same rules
 - [ ] More sources: the blocked ones need an allowed path (a permitted API, a feed, or an

@@ -39,7 +39,7 @@ _UNIT_WORDS: list[tuple[PaymentUnit, str]] = [
     (
         PaymentUnit.PER_PROJECT,
         r"proje\s+(?:bazlı|başına|başinde)|per\s+project|projeli|"
-        r"teslimata\s+göre|teslim\s+edilecek|/\s*proje|"
+        r"teslimata\s+göre|teslim\s+edilecek|/\s*proje|fixed[\s-]?price|sabit\s+fiyat|"
         r"(?:TL|TRY|USD|EUR|₺|\$|€)\s*PROJECT\b",
     ),
     (
@@ -465,6 +465,7 @@ def classify(
     default_city: str | None = None,
     city: str | None = None,
     district: str | None = None,
+    physical: bool = True,
 ) -> Gig:
     """Read one listing and decide what it is. The text is the ad's title plus its body."""
     text = clean_ad_text(f"{title}\n{description}".strip())
@@ -494,7 +495,7 @@ def classify(
         verdict = Verdict.EXCLUDED
         reasons.append("heavy physical work")
         confidence = 0.6
-    elif mode != WorkMode.REMOTE and city and city != "Ankara":
+    elif physical and mode != WorkMode.REMOTE and city and city != "Ankara":
         verdict = Verdict.EXCLUDED
         reasons.append(f"on site in {city}, not Ankara and not remote")
         confidence = 0.5

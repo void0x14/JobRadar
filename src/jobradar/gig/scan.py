@@ -103,13 +103,18 @@ async def scan_source(
         district = None
         title = listing.title
         page_html = None
-        if fetch_details:
+        if fetch_details and getattr(adapter, "fetch_details", True):
             try:
-                html = await client.html(listing.url)
+                html = await client.html(
+                    listing.url, ignore_robots=getattr(adapter, "ignore_robots", False)
+                )
                 page_html = html
                 posting = read_posting(html)
                 if posting is not None:
-                    description = posting.description or description
+                    # The listing page may say how the job is paid (Upwork: "Hourly"), the
+                    # ad page says what the job is. Keep both.
+                    body = posting.description or ""
+                    description = f"{description}\n{body}" if body else description
                     employer = employer or posting.employer
                     published = posting.date_posted
                     city = posting.city
@@ -118,7 +123,10 @@ async def scan_source(
                     if posting.salary_text:
                         description = f"{description}\n{posting.salary_text}"
                 else:
-                    description = main_text(html) or description
+                    body = main_text(html)
+                    # The listing page may say how the job is paid (Upwork: "Hourly"), the
+                    # ad page says what the job is. Keep both.
+                    description = f"{description}\n{body}" if body else description
             except Blocked as e:
                 log.info("ad page not readable", extra={"source": adapter.key, "error": str(e)})
         if _junk_title(title) and page_html is not None:
@@ -136,6 +144,7 @@ async def scan_source(
             default_city=getattr(adapter, "default_city", None),
             city=city,
             district=district,
+            physical=getattr(adapter, "physical", True),
         )
         gig.job_id = sha1(url)[:40]
         gig.source_key = adapter.key

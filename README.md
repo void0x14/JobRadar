@@ -70,6 +70,11 @@ model with the money next to it counts. An ad that says "tam zamanlı" is out ev
 also says "günlük", unless it states a daily pay. When the board's own data says what the ad
 is (its schema.org JobPosting or ItemList), that is used before the prose.
 
+The pages are fetched the way a browser asks for them: the same headers any visitor sends,
+and one retry for the boards (Upwork, Indeed, TELUS Digital) that answer the first request
+with a 403 and set a cookie on that refusal. No browser and no challenge to solve. For the
+sources the owner picked, robots.txt is ignored per source and the report says so.
+
 ## How it works
 
 ```mermaid
