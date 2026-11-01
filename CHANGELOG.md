@@ -25,6 +25,7 @@ All notable changes to JobRadar are listed here. The format follows [Keep a Chan
 - Nothing is scraped around a block: a source that answers 403, a bot challenge page, a robots.txt rule or a missing page is reported as blocked and left alone. Facebook and WhatsApp groups need an account, so their ads come in by hand through `jobradar gig add`.
 - **A gigs page on the dashboard** (`/gigs`): the short-paid work with what it pays, where it is and when it was posted, plus a count in the sidebar.
 - **Stricter rules, from what the first real scans showed:** "günlük raporlama" (daily reporting) and "haftalık toplantı" (a weekly meeting) are not payment models, so "günlük" and "haftalık" only count as one when the money is next to them; a bare number next to the unit has to be a wage, not a headcount ("günlük 3 kişi"); an ad that says "tam zamanlı" is out even when it also says "günlük", unless it states a daily pay. The board's own data is used first where it exists: the schema.org JobPosting of the ad (date, company, place, pay) and the ItemList of the listing page (the real title, instead of "Apply now").
+- **A full scan of every source** (1 November 2026) read 489 ads from the 14 working sources and kept 34 gigs: 11 hourly, 10 weekly, 6 daily, 5 per task, 2 per project. 179 ads said nothing about their pay (they stay in the uncertain pile) and 276 were out (full-time, monthly-only, or on site outside Ankara).
 
 
 **Dashboard (read-only, first step)**

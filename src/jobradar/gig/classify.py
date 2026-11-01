@@ -228,7 +228,7 @@ _SCHEDULE = re.compile(r"\d{1,2}\s*saat|haftada\s*\d|günde\s*\d|çalışma\s+sa
 # The words that make a number a wage: without one of them near it, a number is a headcount,
 # a day count or an age.
 _PAY_WORD = re.compile(
-    r"ücret|yevmiye|maaş|ödeme|bedeli|fiyat|kazanç|kazandır|tutar|rate|per\s+day|per\s+week",
+    r"ücret|yevmiye|ödeme|bedeli|fiyat|kazanç|kazandır|tutar|rate|per\s+day|per\s+week",
     re.IGNORECASE,
 )
 _COUNT_AFTER = re.compile(

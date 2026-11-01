@@ -89,6 +89,17 @@ def test_weekly_as_an_adverb_is_not_a_payment_model() -> None:
     assert gig.verdict == Verdict.UNCERTAIN
 
 
+def test_a_daily_shift_with_a_monthly_wage_is_not_a_daily_rate() -> None:
+    """ "Günlük vardiya, maaşlı"" is a shift in a monthly job, not a daily wage."""
+    gig = classify(
+        title="Üretim Elemanı",
+        description="Günlük vardiya çalışacak, maaşlı eleman aranıyor. Ankara.",
+        url="https://x.test/38",
+        platform="test",
+    )
+    assert gig.verdict == Verdict.UNCERTAIN
+
+
 def test_a_headcount_is_not_a_wage() -> None:
     gig = classify(
         title="Depo",
