@@ -117,9 +117,13 @@ def init() -> None:
 def run() -> None:
     """Start sources, workers and the scheduler (Ctrl+C to stop)."""
     from jobradar import app as application
+    from jobradar.local_llm import ensure_running
 
     logs.setup()
-    _run(application.run(_settings()))
+    settings = _settings()
+    for message in ensure_running([e.base_url for e in settings.config.llm.endpoints.values()]):
+        typer.secho(message, fg="green")
+    _run(application.run(settings))
 
 
 @app.command()
@@ -799,6 +803,230 @@ def stats(days: Annotated[int, typer.Option(help="Window in days.")] = 7) -> Non
     typer.echo(render(build_report(repo, days, alert_above=settings.config.scoring.alert_above)))
 
 
+llm_app = typer.Typer(
+    help="The local LLM servers JobRadar talks to (no API key needed).",
+    no_args_is_help=False,
+)
+app.add_typer(llm_app, name="llm")
+
+
+@llm_app.callback(invoke_without_command=True)
+def llm(ctx: typer.Context) -> None:
+    """Show the model chain and the servers that answer it."""
+    if ctx.invoked_subcommand is not None:
+        return
+    from jobradar.local_llm import endpoint_models, logged_in, service_for
+
+    settings = _settings()
+    llm_config = settings.config.llm
+    typer.echo(f"extract:  {llm_config.extract_model}")
+    typer.echo(f"writer:   {llm_config.writer_model}")
+    typer.echo("fallback: " + (", ".join(llm_config.fallback_models) or "none"))
+    typer.echo("")
+    if not llm_config.endpoints:
+        typer.echo("No local servers are configured (llm.endpoints in config.yaml).")
+        return
+    for name, endpoint in llm_config.endpoints.items():
+        models = endpoint_models(endpoint.base_url)
+        service = service_for(endpoint.base_url)
+        if models is not None:
+            state = "up"
+        elif service is not None and not logged_in(service):
+            state = "no login"
+        else:
+            state = "down"
+        typer.echo(f"  {name:<14} {endpoint.base_url:<38} {state}")
+        for model in models or []:
+            typer.echo(f"      {model}")
+    typer.echo("")
+    typer.echo("Switch model: jobradar llm use <provider/model>")
+
+
+@llm_app.command("use")
+def llm_use(
+    model: Annotated[str, typer.Argument(help="The model to use, e.g. gemini-web/gemini-auto")],
+    slot: Annotated[str, typer.Option("--slot", help="both, extract or writer")] = "both",
+) -> None:
+    """Switch the model JobRadar uses (writes config.yaml)."""
+    from jobradar.config import load_config
+    from jobradar.local_llm import LocalLLMError, endpoint_models, set_models
+
+    settings = _settings()
+    llm_config = settings.config.llm
+    if "/" not in model:
+        _fail(
+            "Give the server and the model, e.g. gemini-web/gemini-auto "
+            "(jobradar llm shows what the servers offer)."
+        )
+    provider, _, name = model.partition("/")
+    if provider not in llm_config.endpoints and provider not in ("gemini", "groq"):
+        _fail(
+            f"No server named '{provider}'. The configured ones are: "
+            f"{', '.join(llm_config.endpoints) or 'none'}."
+        )
+    endpoint = llm_config.endpoints.get(provider)
+    if endpoint is not None:
+        offered = endpoint_models(endpoint.base_url)
+        if offered is None:
+            typer.secho(
+                f"{provider} isn't answering at {endpoint.base_url}. "
+                "Start it with 'jobradar llm start'.",
+                fg="yellow",
+            )
+        elif name not in offered:
+            typer.secho(
+                f"{provider} doesn't offer '{name}'. It offers: {', '.join(offered)}",
+                fg="yellow",
+            )
+    if slot not in ("both", "extract", "writer"):
+        _fail("--slot is both, extract or writer.")
+    try:
+        before = CONFIG_PATH.read_text()
+        after = set_models(
+            before,
+            extract=model if slot in ("both", "extract") else None,
+            writer=model if slot in ("both", "writer") else None,
+        )
+    except (OSError, LocalLLMError) as e:
+        _fail(str(e))
+        raise
+    CONFIG_PATH.write_text(after)
+    try:
+        load_config(CONFIG_PATH)
+    except ConfigError as e:
+        CONFIG_PATH.write_text(before)
+        _fail(f"Left config.yaml unchanged: {e}")
+    typer.secho(f"Now using {model} for {slot}.", fg="green")
+    typer.echo("Restart 'jobradar run' to pick it up.")
+
+
+@llm_app.command("test")
+def llm_test() -> None:
+    """Ask the model chain one small question and show who answers."""
+    import time
+
+    import httpx
+
+    from jobradar.local_llm import ask
+
+    settings = _settings()
+    llm_config = settings.config.llm
+    for model in (llm_config.extract_model, *llm_config.fallback_models):
+        provider, _, name = model.partition("/")
+        endpoint = llm_config.endpoints.get(provider)
+        if endpoint is None:
+            typer.echo(f"{model}: a hosted provider, so it needs a key. Skipped.")
+            continue
+        started = time.monotonic()
+        try:
+            answer = ask(endpoint.base_url, name, 'Reply with only this JSON: {"ok": true}')
+        except httpx.HTTPError as e:
+            typer.secho(f"{model}: no answer ({e}).", fg="yellow")
+            continue
+        took = (time.monotonic() - started) * 1000
+        typer.secho(f"{model}: answered in {took:.0f} ms", fg="green")
+        typer.echo(f"  {answer.strip()[:200]}")
+
+
+@llm_app.command("setup")
+def llm_setup(
+    cookies: Annotated[
+        str | None,
+        typer.Option("--cookies", help="The cookie export from your browser (JSON file)."),
+    ] = None,
+) -> None:
+    """Install the local servers and give Gemini Web your cookie."""
+    from jobradar.local_llm import LocalLLMError
+    from jobradar.local_llm import setup as install_services
+
+    try:
+        done = install_services(Path(cookies) if cookies else None)
+    except LocalLLMError as e:
+        _fail(str(e))
+        raise
+    for line in done:
+        typer.secho(line, fg="green")
+    if not done:
+        typer.echo("The local servers are already installed.")
+    typer.echo("")
+    typer.echo("Next: jobradar llm start")
+    typer.echo("The fallback needs one DeepSeek login: jobradar llm login")
+
+
+@llm_app.command("start")
+def llm_start(
+    which: Annotated[
+        str | None, typer.Argument(help="gemini-web or deepseek-web; all of them by default")
+    ] = None,
+) -> None:
+    """Start the local servers (they answer on 127.0.0.1)."""
+    from jobradar.local_llm import SERVICES, LocalLLMError
+    from jobradar.local_llm import start as start_service
+
+    names = [which] if which else list(SERVICES)
+    unknown = [n for n in names if n not in SERVICES]
+    if unknown:
+        _fail(f"No server named {', '.join(unknown)}. The known ones: {', '.join(SERVICES)}.")
+    failed = False
+    for name in names:
+        try:
+            typer.secho(start_service(SERVICES[name]), fg="green")
+        except LocalLLMError as e:
+            typer.secho(str(e), fg="red", err=True)
+            failed = True
+    if failed:
+        raise typer.Exit(code=1)
+
+
+@llm_app.command("stop")
+def llm_stop(
+    which: Annotated[
+        str | None, typer.Argument(help="gemini-web or deepseek-web; all of them by default")
+    ] = None,
+) -> None:
+    """Stop the local servers."""
+    from jobradar.local_llm import SERVICES
+    from jobradar.local_llm import stop as stop_service
+
+    names = [which] if which else list(SERVICES)
+    for name in names:
+        if name not in SERVICES:
+            _fail(f"No server named {name}. The known ones: {', '.join(SERVICES)}.")
+        typer.echo(stop_service(SERVICES[name]))
+
+
+@llm_app.command("login")
+def llm_login() -> None:
+    """Log in to DeepSeek Web, so the fallback can answer (one time)."""
+    import os
+    import shutil
+    import subprocess
+
+    from jobradar.local_llm import SERVICES, services_dir
+
+    path = services_dir() / SERVICES["deepseek-web"].directory
+    if not path.is_dir():
+        _fail("DeepSeek isn't installed: run 'jobradar llm setup' first.")
+    node = shutil.which("node")
+    if node is None:
+        _fail("Node.js is needed for the DeepSeek login (https://nodejs.org).")
+        raise  # unreachable; keeps type checkers happy
+    typer.echo("A Chrome window opens. Log in to DeepSeek there and send a short message,")
+    typer.echo("then come back here and press Enter.")
+    env = {**os.environ}
+    if not env.get("CHROME_PATH"):
+        for browser in ("chromium", "chromium-browser", "google-chrome"):
+            if found := shutil.which(browser):
+                env["CHROME_PATH"] = found
+                break
+    result = subprocess.call(  # noqa: S603 (our own script, in our own directory)
+        [node, "scripts/deepseek_chrome_auth.js"], cwd=path, env=env
+    )
+    if result != 0:
+        _fail("The DeepSeek login didn't finish. Run 'jobradar llm login' again.")
+    typer.secho("DeepSeek is ready to answer.", fg="green")
+
+
 gig_app = typer.Typer(
     help="Türkiye kısa süreli iş avcısı: günlük, saatlik, görev ve proje başına ödeme.",
     no_args_is_help=True,
@@ -950,6 +1178,7 @@ def gig_add(
     print(f"{state}: {gig.job_title[:80]} | {gig.verdict} | {gig.payment_text or 'odeme yazmiyor'}")
     print(f"  {link}")
     print(f"  kaydedildi: {job_id}")
+
 
 if __name__ == "__main__":
     app()

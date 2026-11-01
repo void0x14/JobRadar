@@ -26,7 +26,7 @@ from litellm import exceptions as llm_errors
 from pydantic import BaseModel, ValidationError
 
 from jobradar.clock import Clock, to_iso, utcnow
-from jobradar.config import ConfigError, Settings
+from jobradar.config import ConfigError, LLMEndpoint, Settings
 from jobradar.db.repo import Repo
 from jobradar.pipeline.dedupe import sha1
 from jobradar.queue.tasks import Defer, PermanentError, RetryableError
@@ -99,12 +99,20 @@ class LLM:
         self._lock = asyncio.Lock()
 
     def _api_key(self, model: str) -> str | None:
+        endpoint = self._endpoint(model)
+        if endpoint is not None:
+            # A local server checks nothing; LiteLLM just wants a value to send.
+            return endpoint.api_key or "local"
         provider = model.split("/", 1)[0]
         field = _PROVIDER_KEY.get(provider)
         secret = getattr(self._secrets, field) if field else None
         if field and secret is None:
             raise ConfigError(f"Missing in .env: {field.upper()} (needed for {model})")
         return secret.get_secret_value() if secret else None
+
+    def _endpoint(self, model: str) -> LLMEndpoint | None:
+        """The local server that serves this model, if the prefix names one."""
+        return self._cfg.endpoints.get(model.split("/", 1)[0])
 
     def _midnight_utc(self) -> datetime:
         local = self._clock().astimezone(self._tz)
@@ -143,15 +151,34 @@ class LLM:
         return float(cost_in + cost_out) * self._cfg.usd_to_inr
 
     async def _call(self, model: str, messages: list[dict[str, str]]) -> tuple[str, float]:
+        """Call the model; when it can't answer, the fallback models in turn."""
+        failure: Exception = PermanentError("no LLM model to call")
+        for candidate in (model, *self._cfg.fallback_models):
+            try:
+                return await self._call_one(candidate, messages)
+            except (RetryableError, PermanentError) as e:
+                failure = e
+                log.warning(
+                    "LLM model failed; trying the next one",
+                    extra={"model": candidate, "error": str(e)[:200]},
+                )
+        raise failure
+
+    async def _call_one(self, model: str, messages: list[dict[str, str]]) -> tuple[str, float]:
         self._check_budget()
         await self._pace()
+        endpoint = self._endpoint(model)
+        # A local server speaks the OpenAI API, so LiteLLM talks to it as one.
+        target = f"openai/{model.split('/', 1)[1]}" if endpoint else model
+        extra: dict[str, Any] = {"api_base": endpoint.base_url} if endpoint else {}
         try:
             response = await self._completion(
-                model=model,
+                model=target,
                 messages=messages,
                 api_key=self._api_key(model),
                 response_format={"type": "json_object"},
                 timeout=60,
+                **extra,
             )
         except llm_errors.RateLimitError as e:
             raise RetryableError(f"LLM rate limit: {e}", retry_after=60) from e
@@ -163,7 +190,8 @@ class LLM:
         ) as e:
             raise RetryableError(f"LLM unavailable: {e}") from e
         except (llm_errors.AuthenticationError, llm_errors.PermissionDeniedError) as e:
-            raise PermanentError(f"LLM key rejected for {model}: check .env") from e
+            where = f"the server at {endpoint.base_url}" if endpoint else ".env"
+            raise PermanentError(f"LLM key rejected for {model}: check {where}") from e
         except llm_errors.BadRequestError as e:
             raise PermanentError(f"LLM rejected the request: {e}") from e
         content = response.choices[0].message.content or ""

@@ -17,7 +17,9 @@ def write(tmp_path: Path, text: str, name: str = "config.yaml") -> Path:
 def test_example_config_loads() -> None:
     cfg = load_config(ROOT / "config.example.yaml")
     assert cfg.scoring.alert_above == 75
-    assert cfg.llm.providers == {"gemini"}
+    assert cfg.llm.providers == {"gemini-web", "deepseek-web"}
+    assert cfg.llm.fallback_models == ["deepseek-web/deepseek-chat"]
+    assert cfg.llm.endpoints["gemini-web"].base_url == "http://127.0.0.1:4981/openai/v1"
     assert cfg.notify.tz.key == "Asia/Kolkata"
     assert cfg.sources.email_forward.folder == "JobRadar"
 
@@ -46,6 +48,7 @@ BASE = "sources: {telegram: {chats: ['@x']}}\n"
         ("notify: {timezone: Mars/Base}", "unknown timezone 'Mars/Base'"),
         ("notify: {digest_times: ['9am']}", "24-hour HH:MM"),
         ("llm: {extract_model: gemini-flash}", "use 'provider/model'"),
+        ("llm: {extract_model: 'foo/bar'}", "unknown provider 'foo'"),
     ],
 )
 def test_bad_values_give_readable_errors(tmp_path: Path, yaml_text: str, expected: str) -> None:

@@ -173,6 +173,7 @@ Goal: every row has structured details and a trustworthy match score.
 - [x] `llm.py`: LiteLLM `structured()` with our own JSON validation + one repair (no instructor dependency); Gemini default, Groq alternative; cache key `sha1(model|prompt_version|input)`; cost logged to `llm_cache.cost_inr`; daily budget pause until midnight IST; one repair retry on schema errors
 - [x] `prompts/extract.md` with a `version:` header; untrusted text inside tags
 - [x] (part B) `prompts/match.md` (replaced the planned `score.md`): fixed questions answered as levels; the score is computed in code
+- [x] Local model servers, no API key: `llm.endpoints` in config.yaml names a local server that speaks the OpenAI API, and the model prefix picks one ("gemini-web/gemini-auto"); `llm.fallback_models` are tried in order when the model in use can't answer; `jobradar llm` installs (Gemini Web with your cookie, DeepSeek Web with one login), starts, stops, lists the models and switches the model in config.yaml
 
 **Understanding and matching**
 

@@ -48,12 +48,21 @@ gig:                       # the Türkiye daily gig finder (günlük, saatlik, g
   max_new_per_source: 20    # how many new ads one source may cost per scan
 
 llm:
-  extract_model: "gemini/gemini-flash-lite-latest"  # extraction + scoring (cheap, fast)
+  extract_model: "gemini-web/gemini-auto"  # extraction + scoring (cheap, fast)
   extract_mode: fallback    # fallback: LLM only when the page and post don't state role and
                             #   company (most posts do); always: every job (adds summaries)
-  writer_model: "gemini/gemini-flash-latest"      # longer job summaries (Pro has no free tier)
-  # Groq alternative:
-  # extract_model: "groq/llama-3.1-8b-instant"
+  writer_model: "gemini-web/gemini-auto"      # longer job summaries
+  # Tried in order when the model above can't answer (the server is down, a cookie expired).
+  fallback_models: ["deepseek-web/deepseek-chat"]
+  # The local servers (jobradar llm setup) need no key: they run on your own machine.
+  endpoints:
+    gemini-web:
+      base_url: "http://127.0.0.1:4981/openai/v1"
+    deepseek-web:
+      base_url: "http://127.0.0.1:9655/v1"
+  # Hosted providers need a key in .env (GEMINI_API_KEY, GROQ_API_KEY):
+  # extract_model: "gemini/gemini-flash-lite-latest"
+  # writer_model:  "gemini/gemini-flash-latest"
   # writer_model:  "groq/llama-3.3-70b-versatile"
   daily_budget_inr: 15      # estimated at list prices; LLM work pauses until midnight when hit
   requests_per_minute: 10   # stay under your key's rate limit

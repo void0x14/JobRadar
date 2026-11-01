@@ -85,3 +85,68 @@ async def test_missing_key_is_a_config_error(repo: Repo, clock: FakeClock) -> No
     llm = LLM(settings, repo, clock=clock, completion=FakeCompletion(GOOD))
     with pytest.raises(ConfigError, match="GEMINI_API_KEY"):
         await llm.structured(MODEL, PROMPT, JobPosting, page_text="a")
+
+
+ENDPOINTS = {
+    "gemini-web": {"base_url": "http://127.0.0.1:4981/openai/v1"},
+    "deepseek-web": {"base_url": "http://127.0.0.1:9655/v1"},
+}
+
+
+def down() -> litellm.exceptions.APIConnectionError:
+    return litellm.exceptions.APIConnectionError(
+        "connection refused", llm_provider="openai", model="gemini-auto"
+    )
+
+
+async def test_a_local_model_is_called_as_an_openai_one(repo: Repo, clock: FakeClock) -> None:
+    fake = FakeCompletion(GOOD)
+    llm = make(
+        repo,
+        clock,
+        fake,
+        extract_model="gemini-web/gemini-auto",
+        writer_model="gemini-web/gemini-auto",
+        endpoints=ENDPOINTS,
+    )
+    await llm.structured("gemini-web/gemini-auto", PROMPT, JobPosting, page_text="a")
+    call = fake.calls[0]
+    assert call["model"] == "openai/gemini-auto"
+    assert call["api_base"] == "http://127.0.0.1:4981/openai/v1"
+    assert call["api_key"] == "local"
+
+
+async def test_the_fallback_answers_when_the_main_model_cant(repo: Repo, clock: FakeClock) -> None:
+    fake = FakeCompletion(down(), GOOD)
+    llm = make(
+        repo,
+        clock,
+        fake,
+        extract_model="gemini-web/gemini-auto",
+        writer_model="gemini-web/gemini-auto",
+        fallback_models=["deepseek-web/deepseek-chat"],
+        endpoints=ENDPOINTS,
+    )
+    result = await llm.structured("gemini-web/gemini-auto", PROMPT, JobPosting, page_text="a")
+    assert result.company == "Acme"
+    assert len(fake.calls) == 2
+    assert fake.calls[1]["model"] == "openai/deepseek-chat"
+    assert fake.calls[1]["api_base"] == "http://127.0.0.1:9655/v1"
+
+
+async def test_the_last_failure_is_raised_when_no_model_answers(
+    repo: Repo, clock: FakeClock
+) -> None:
+    fake = FakeCompletion(down(), down())
+    llm = make(
+        repo,
+        clock,
+        fake,
+        extract_model="gemini-web/gemini-auto",
+        writer_model="gemini-web/gemini-auto",
+        fallback_models=["deepseek-web/deepseek-chat"],
+        endpoints=ENDPOINTS,
+    )
+    with pytest.raises(RetryableError):
+        await llm.structured("gemini-web/gemini-auto", PROMPT, JobPosting, page_text="a")
+    assert len(fake.calls) == 2

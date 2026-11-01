@@ -276,12 +276,32 @@ class GigConfig(_Strict):
     max_new_per_source: int = Field(default=20, ge=1, le=200)
 
 
+class LLMEndpoint(_Strict):
+    """A local server that speaks the OpenAI API, so no hosted provider key is needed."""
+
+    base_url: str
+    api_key: str | None = None  # local servers usually check nothing
+
+    @field_validator("base_url")
+    @classmethod
+    def _is_a_url(cls, v: str) -> str:
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("use an http(s) address, e.g. http://127.0.0.1:4981/openai/v1")
+        return v.rstrip("/")
+
+
 class LLMConfig(_Strict):
     extract_model: str = "gemini/gemini-flash-lite-latest"
     # fallback: only jobs whose page and post don't state role and company go to the LLM.
     # always: every job does (fills summary and skills too, at the cost of an LLM call each).
     extract_mode: Literal["fallback", "always"] = "fallback"
     writer_model: str = "gemini/gemini-flash-latest"
+    # Tried in order when the model above can't answer (the local server is down, a key
+    # expired). The first one that answers wins.
+    fallback_models: list[str] = Field(default_factory=list)
+    # Local servers that speak the OpenAI API, by name. The model prefix picks one:
+    # "gemini-web/gemini-auto" means the model "gemini-auto" on the server "gemini-web".
+    endpoints: dict[str, LLMEndpoint] = Field(default_factory=dict)
     daily_budget_inr: float = Field(default=15, gt=0)
     requests_per_minute: float = Field(default=10, gt=0, le=1000)  # free Gemini tier: ~10-15
     usd_to_inr: float = Field(default=88, gt=0)  # for the budget's cost estimate
@@ -293,9 +313,31 @@ class LLMConfig(_Strict):
             raise ValueError("use 'provider/model', e.g. 'gemini/gemini-flash-latest'")
         return v
 
+    @field_validator("fallback_models")
+    @classmethod
+    def _fallbacks_have_provider(cls, v: list[str]) -> list[str]:
+        for model in v:
+            if "/" not in model:
+                raise ValueError("use 'provider/model', e.g. 'gemini/gemini-flash-latest'")
+        return v
+
+    @model_validator(mode="after")
+    def _providers_known(self) -> LLMConfig:
+        for model in (self.extract_model, self.writer_model, *self.fallback_models):
+            provider = model.split("/", 1)[0]
+            if provider not in _PROVIDER_KEYS and provider not in self.endpoints:
+                raise ValueError(
+                    f"unknown provider '{provider}' in '{model}'. Add it under "
+                    f"llm.endpoints (a local server) or use {', '.join(sorted(_PROVIDER_KEYS))}."
+                )
+        return self
+
     @property
     def providers(self) -> set[str]:
-        return {m.split("/", 1)[0] for m in (self.extract_model, self.writer_model)}
+        return {
+            m.split("/", 1)[0]
+            for m in (self.extract_model, self.writer_model, *self.fallback_models)
+        }
 
 
 class FiltersConfig(_Strict):

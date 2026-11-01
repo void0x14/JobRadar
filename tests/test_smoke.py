@@ -25,7 +25,7 @@ def test_example_configs_parse() -> None:
     config = yaml.safe_load((ROOT / "config.example.yaml").read_text())
     profile = yaml.safe_load((ROOT / "profile.example.yaml").read_text())
     assert config["scoring"]["alert_above"] == 75
-    assert config["llm"]["extract_model"].startswith("gemini/")
+    assert config["llm"]["extract_model"].startswith("gemini-web/")
     assert profile["basics"]["name"]
 
 

@@ -8,6 +8,8 @@ config/*
 !config/.gitkeep
 data/*
 !data/.gitkeep
+# the local LLM servers (jobradar llm setup clones them here)
+services/
 
 # Python
 __pycache__/
