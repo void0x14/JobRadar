@@ -210,7 +210,7 @@ Armut (hizmet verenler)  [blocked]
 Facebook grupları (iş ilanı)  [manual]
   yöntem: manuel (kullanıcı ilanı ekler)
   son başarılı tarama: hiç · hata: 0 · toplam ilan: 0 · kısa süreli iş: 0 (son 24 saat: 0) · doğrulamada sınıflandırılan: 0
-  not: Facebook has no public listing API and groups need an account; nothing is scraped.
+  not: Facebook has no public listing API and groups need an account; nothing is scraped. Gruplar: https://www.facebook.com/groups/1533399140233390, https://www.facebook.com/search/groups/?q=ankara%20g%C3%BCnl%C3%BCk%20i%C5%9F%20ilanlar%C4%B1
     - Kaynağa erişilebiliyor mu? kullanıcı girişi gerekiyor
     - İlan listesi alınabiliyor mu? kullanıcı girişi gerekiyor
     - İlan detayları okunabiliyor mu? kullanıcı girişi gerekiyor
@@ -224,7 +224,7 @@ Facebook grupları (iş ilanı)  [manual]
 WhatsApp grupları (iş ilanı)  [manual]
   yöntem: manuel (kullanıcı ilanı ekler)
   son başarılı tarama: hiç · hata: 0 · toplam ilan: 0 · kısa süreli iş: 0 (son 24 saat: 0) · doğrulamada sınıflandırılan: 0
-  not: Groups need a membership and the messages are not public; nothing is scraped.
+  not: Groups need a membership and the messages are not public; nothing is scraped. Gruplar: https://whatsappgruplari.com/grup/ankara-is-ilanlari, https://whatsappgruplari.com/kategori/is-ilanlari, https://whatsappkanali.com/sehir/ankara/is-ilanlari
     - Kaynağa erişilebiliyor mu? kullanıcı girişi gerekiyor
     - İlan listesi alınabiliyor mu? kullanıcı girişi gerekiyor
     - İlan detayları okunabiliyor mu? kullanıcı girişi gerekiyor
