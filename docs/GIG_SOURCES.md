@@ -41,6 +41,13 @@ Raporu yenilemek için: `uv run jobradar gig validate`
 
 Engelli kaynaklarda hiçbir koruma mekanizması atlanmaz: 403, bot challenge sayfası, robots.txt yasağı veya olmayan sayfa olduğu gibi raporlanır. LinkedIn'in robots.txt'i generic ajanlara her yolu kapatıyor (User-agent: * -> Disallow: /) ve tarayıcı izin istiyor; Facebook ve WhatsApp grupları taranmaz, ilanlar kullanıcının getirdiği metinle eklenir.
 
+## Elle gelen kaynaklar (Facebook ve WhatsApp)
+
+Bu ikisi taranmaz; ilanlar kullanıcının getirdiği metinle eklenir (`jobradar gig add`). Kontrol edilenler:
+
+- **Facebook grupları:** grubun sayfası yalnızca adıyla herkese açık (`ANKARA IS ILANLARI`); robots.txt `/groups/` yolunu yasaklıyor ve gönderileri okumak bir Facebook hesabı istiyor. Grup arama adresi (giriş olmadan) 404 veriyor. Yani: üyelik gerekiyor, otomatik okuma yok.
+- **WhatsApp grupları:** `whatsappgruplari.com` ve `whatsappkanali.com` dizinleri herkese açık ve her biri davet bağlantısını, üye sayısını ve grubun gizli olup olmadığını gösteriyor. Kullanıcı davet bağlantısıyla gruba katılıyor, sonra ilanı kopyalayıp (veya yönlendirip) `jobradar gig add` ile ekliyor; aynı sınıflandırma kuralları işliyor.
+
 ## Kaynakların tam çıktısı
 
 ```

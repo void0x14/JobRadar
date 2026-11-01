@@ -37,7 +37,10 @@ ADAPTERS = [
         key="facebook",
         name="Facebook grupları (iş ilanı)",
         platform="facebook",
-        note="Facebook has no public listing API and groups need an account; nothing is scraped.",
+        note=(
+            "Facebook has no public listing API: robots.txt disallows the group pages and the "
+            "posts need an account, so nothing is scraped."
+        ),
         groups=[
             "https://www.facebook.com/groups/1533399140233390",
             "https://www.facebook.com/search/groups/?q=ankara%20g%C3%BCnl%C3%BCk%20i%C5%9F%20ilanlar%C4%B1",
@@ -52,7 +55,11 @@ ADAPTERS = [
         key="whatsapp",
         name="WhatsApp grupları (iş ilanı)",
         platform="whatsapp",
-        note="Groups need a membership and the messages are not public; nothing is scraped.",
+        note=(
+            "The directories are public and carry the invitation links, the member counts and "
+            "whether a group is private; the messages themselves need a membership, so nothing "
+            "is scraped."
+        ),
         groups=[
             "https://whatsappgruplari.com/grup/ankara-is-ilanlari",
             "https://whatsappgruplari.com/kategori/is-ilanlari",
