@@ -1158,26 +1158,14 @@ def gig_add(
 ) -> None:
     """Elle getirilen bir ilanı ekle (Facebook ve WhatsApp akışı)."""
     from jobradar import app as application
-    from jobradar.gig.classify import classify, detect_employer, detect_published
-    from jobradar.pipeline.dedupe import sha1
+    from jobradar.gig.ingest import add_gig
 
     repo, _ = application.open_store()
-    link = url or f"https://manuel.local/{sha1(text)[:16]}"
-    gig = classify(
-        title=text.split("\n", 1)[0][:120],
-        description=text,
-        url=link,
-        platform=source,
-        employer=detect_employer(text),
-        published=detect_published(text),
-    )
-    gig.job_id = sha1(link)[:40]
-    gig.source_key = source
-    job_id, is_new = repo.save_gig(gig)
+    gig, is_new = add_gig(repo, text, url=url, platform=source, source_key=source)
     state = "yeni" if is_new else "zaten kayitli"
     print(f"{state}: {gig.job_title[:80]} | {gig.verdict} | {gig.payment_text or 'odeme yazmiyor'}")
-    print(f"  {link}")
-    print(f"  kaydedildi: {job_id}")
+    print(f"  {gig.original_url}")
+    print(f"  kaydedildi: {gig.job_id}")
 
 
 if __name__ == "__main__":

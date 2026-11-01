@@ -460,6 +460,43 @@ Config: `web: {enabled: true, host: 127.0.0.1, port: 8080}`. Dependencies `fasta
 
 ---
 
+## Türkiye daily gig finder — 1 November 2026
+
+Goal: find work that pays by the day, the hour, the task or the project, in Ankara or
+remote, from as many sources as possible, deduplicated, classified and notified the moment
+it appears. Not a CV builder, not an application tracker: JobRadar finds and tells.
+
+- [x] `gig/models.py`: one gig, one row, every field the brief lists (payment amount,
+  currency, unit, frequency and timing apart; what is not stated stays empty)
+- [x] `gig/classify.py`: the payment model is read from the ad's own words, one unit at a
+  time; "part-time" alone is not a payment model; a work schedule ("günlük 8 saat") is not
+  one either; no pay at all goes to the *uncertain* pile; full-time, monthly-only and
+  heavy-lifting work is dropped with the reason kept; remote counts, on site outside
+  Ankara does not; the same ad on two sites has one fingerprint
+- [x] `gig/structured.py`: the page's own schema.org JobPosting is used before the prose
+  (date posted, company, place, pay)
+- [x] `gig/adapters/`: one adapter per source, in the brief's order: Eleman.net (Ankara and
+  the daily listings), İşin Olsun, Telegram's public channel previews, R10, Upwork,
+  DataForce, OneForma, RWS TrainAI, OpenTrain AI, Bionluk, Armut, Facebook, WhatsApp,
+  Sahibinden, then Kariyer.net, SecretCV, Indeed, LinkedIn, the Ankara city hall, Contra,
+  Mindrift, Corpshore, Rise Data Labs, TELUS Digital and Rasyonel Kariyer. robots.txt is
+  obeyed, one request per second per host, a 403 or a challenge page is reported, never
+  worked around
+- [x] `gig/scan.py`: read every source, read only the ads we have not seen, keep one row per
+  ad, mark an ad whose page has gone as closed, treat an ad older than a month as old
+- [x] `gig/notify.py`: the new gigs go out as one email as they appear (dry run saves the
+  preview, like the rest of JobRadar)
+- [x] `gig/watcher.py` + `gig.every_minutes`: the same scan runs while `jobradar run` is up
+- [x] `gig/validate.py`: the nine source checks and the report; `docs/GIG_SOURCES.md` holds
+  the run of 1 November 2026 (14 sources work, 12 blocked, 2 manual)
+- [x] `gig/ingest.py` + `jobradar gig add`: ads from Facebook and WhatsApp groups come in
+  by hand, judged by the same rules
+- [ ] More sources: the blocked ones need an allowed path (a permitted API, a feed, or an
+  account the owner uses), not a way around the block
+- [ ] A gig page on the dashboard: today the gigs live in the email, the CLI and the database
+
+---
+
 ## v1.0 Public open-source launch — week 8
 
 - [ ] `Dockerfile`: Python + Tesseract (+ Playwright Chromium or a separate `browser` service)

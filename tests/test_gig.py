@@ -531,3 +531,31 @@ def test_the_notification_is_saved_in_dry_run(repo: Repo, tmp_path: Path) -> Non
     outcome = notify(settings, [row], preview_dir=tmp_path)
     assert "dry run" in outcome
     assert list(tmp_path.glob("gigs-*.html"))
+
+
+def test_an_ad_brought_in_by_hand_is_judged_the_same_way(repo: Repo) -> None:
+    """Facebook and WhatsApp groups are not scraped: their ads come in by hand."""
+    from jobradar.gig.ingest import add_gig
+
+    gig, is_new = add_gig(
+        repo,
+        "Günlük 1.500 TL yevmiye ile Ankara Çankaya'da temizlik personeli aranıyor.",
+        platform="facebook",
+        source_key="facebook",
+    )
+    assert is_new is True
+    assert gig.verdict == Verdict.GIG
+    assert gig.payment_amount == 1500 and gig.payment_unit == PaymentUnit.DAILY
+    assert gig.city == "Ankara"
+    row = repo.gig_by_url(gig.original_url)
+    assert row is not None and row.source_key == "facebook"
+    # The same ad pasted twice is one row.
+    again, is_new_again = add_gig(
+        repo,
+        "Günlük 1.500 TL yevmiye ile Ankara Çankaya'da temizlik personeli aranıyor.",
+        platform="facebook",
+        source_key="facebook",
+    )
+    assert is_new_again is False
+    assert again.job_id == gig.job_id
+    assert repo.count_gigs() == 1
