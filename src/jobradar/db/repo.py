@@ -1429,12 +1429,16 @@ class Repo:
                 {"now": stamp, "ids": job_ids},
             )
 
-    def gigs_to_recheck(self, older_than: str, limit: int = 5) -> list[GigRow]:
-        """Open gigs we have not looked at for a while: the ad page may be gone by now."""
+    def gigs_to_recheck(self, source_key: str, older_than: str, limit: int = 5) -> list[GigRow]:
+        """Open ads of one source we have not looked at for a while: the page may be gone."""
         with Session(self.engine) as s:
             query = (
                 select(GigRow)
-                .where(col(GigRow.closed_at).is_(None), col(GigRow.last_seen) <= older_than)
+                .where(
+                    col(GigRow.closed_at).is_(None),
+                    col(GigRow.last_seen) <= older_than,
+                    GigRow.source_key == source_key,
+                )
                 .order_by(col(GigRow.last_seen))
                 .limit(limit)
             )

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import ClassVar
 
 import pytest
+from sqlalchemy import text
 
 from jobradar.db.repo import Repo
 from jobradar.gig import scan as scanner
@@ -521,6 +522,31 @@ async def test_an_ad_that_is_gone_is_marked_closed(repo: Repo) -> None:
     repo.mark_gig_closed(row.job_id)
     assert repo.list_gigs(verdict="gig") == []
     assert [g.job_id for g in repo.list_gigs(include_closed=True)] == [row.job_id]
+
+
+async def test_only_the_ads_of_that_source_are_rechecked(repo: Repo) -> None:
+    """The closed-ad check looks at the source it is scanning, not at every source."""
+    one = classify(
+        title="Günlük 1.500 TL temizlik elemanı",
+        description="Ankara günlük 1.500 TL yevmiye",
+        url="https://a.test/ilan",
+        platform="a",
+    )
+    one.source_key = "a"
+    two = classify(
+        title="Günlük 1.500 TL temizlik elemanı",
+        description="Ankara günlük 1.500 TL yevmiye",
+        url="https://b.test/ilan",
+        platform="b",
+    )
+    two.source_key = "b"
+    repo.save_gig(one)
+    repo.save_gig(two)
+    old = "2000-01-01T00:00:00.000000Z"
+    with repo._tx() as c:
+        c.execute(text("UPDATE gig SET last_seen = :old"), {"old": old})
+    due = repo.gigs_to_recheck("a", old, limit=5)
+    assert [g.source_key for g in due] == ["a"]
 
 
 async def test_an_old_ad_is_not_a_gig(repo: Repo) -> None:

@@ -155,7 +155,7 @@ async def scan_source(
                 new_gigs += 1
     # Old ads: a page that has gone tells us the ad is closed.
     for known in repo.gigs_to_recheck(
-        (now - timedelta(hours=RECHECK_AFTER_HOURS)).isoformat(), limit=5
+        adapter.key, (now - timedelta(hours=RECHECK_AFTER_HOURS)).isoformat(), limit=5
     ):
         try:
             await client.html(known.original_url)
